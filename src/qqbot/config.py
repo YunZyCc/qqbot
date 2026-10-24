@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     growth_enabled: bool = True
     growth_every: int = 10
     growth_promote_after: int = 3
-    reply_max_chars: int = 500
     daily_token_budget: int = 200_000
     request_timeout: float = 60.0
 
@@ -67,9 +66,10 @@ class Settings(BaseSettings):
 
     # 回复风格
     reply_segments_max: int = 5
-    # 单段字数上限；1~40 字，像真人连发短消息
-    reply_segment_max_chars: int = 40
-    # 发几条的权重，逗号分隔，对应 1/2/3/4/5 段。越往后越少
+    # 单条字数硬上限。这是「每条」的上限，不是整个回复的总长度上限。
+    # 放宽到 100 是为了让「两段合一」更容易成立，减少连发条数；真正该多短交给 prompt 引导
+    reply_segment_max_chars: int = 100
+    # 发几条的权重，逗号分隔，对应 1/2/3/4/5 条。越往后越少
     reply_segment_weights: str = "65,22,8,3,2"
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
