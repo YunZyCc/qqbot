@@ -65,7 +65,7 @@ async def test_migration_from_legacy_db(tmp_path):
     await store.init()
     rows = await store.recent_messages("private:9", 10)
     assert rows[0]["content"] == "旧消息"
-    assert await store.get_setting("schema_version") == "5"
+    assert await store.get_setting("schema_version") == "6"
     await store.close()
 
 
@@ -92,3 +92,61 @@ async def test_self_memory(tmp_path):
     picked = await memory.recall("住在哪里")
     assert picked and picked[0]["object"] == "住在 QQ 里"
     await store.close()
+
+
+async def test_facts_split_into_fact_and_focus(tmp_path):
+    store = await _store(tmp_path)
+    await store.upsert_fact("private:1", "user", "喜欢", "猫", 0.9, source="fact")
+    await store.upsert_fact("private:1", "user", "最近在", "看 CS 比赛", 0.7, source="focus")
+    stable = await store.active_facts("private:1", source="fact")
+    focus = await store.active_facts("private:1", source="focus")
+    assert [f["object"] for f in stable] == ["猫"]
+    assert [f["object"] for f in focus] == ["看 CS 比赛"]
+    # 不过滤时两类都在
+    assert len(await store.active_facts("private:1")) == 2
+    await store.close()
+
+
+async def test_focus_and_fact_do_not_collide(tmp_path):
+    store = await _store(tmp_path)
+    await store.upsert_fact("private:1", "user", "在做", "前端", 0.9, source="fact")
+    await store.upsert_fact("private:1", "user", "在做", "看比赛", 0.7, source="focus")
+    assert [f["object"] for f in await store.active_facts("private:1", "fact")] == ["前端"]
+    assert [f["object"] for f in await store.active_facts("private:1", "focus")] == ["看比赛"]
+    await store.close()
+
+
+async def test_recent_facts_ordered(tmp_path):
+    store = await _store(tmp_path)
+    await store.upsert_fact("private:1", "user", "在看", "CS 比赛", 0.7, source="focus")
+    await store.upsert_fact("private:1", "user", "在调试", "机器人", 0.7, source="focus")
+    rows = await store.recent_facts("private:1", "focus", 5)
+    assert [r["object"] for r in rows] == ["CS 比赛", "机器人"]
+    await store.close()
+
+
+async def test_episodes_persisted(tmp_path):
+    store = await _store(tmp_path)
+    await store.add_episode("private:1", 0.0, 10.0, "聊了 CS 比赛")
+    await store.add_episode("private:1", 10.0, 20.0, "聊了表情包")
+    eps = await store.recent_episodes("private:1", 5)
+    assert [e["text"] for e in eps] == ["聊了 CS 比赛", "聊了表情包"]
+    assert await store.latest_episode_end("private:1") == 20.0
+    await store.close()
+
+
+def test_clean_object_rewrites_self_reference():
+    from qqbot.memory.facts import _clean_object
+
+    assert _clean_object("对方说“行吧”") == "你说“行吧”"
+    assert _clean_object("「助手」话太多") == "你话太多"
+    assert _clean_object("猫") == "猫"
+
+
+def test_normalize_kind_falls_back_on_confidence():
+    from qqbot.memory.facts import _normalize_kind
+
+    assert _normalize_kind("focus", 0.9) == "focus"
+    assert _normalize_kind("fact", 0.6) == "fact"
+    assert _normalize_kind("", 0.9) == "fact"
+    assert _normalize_kind("", 0.6) == "focus"

@@ -17,7 +17,7 @@ EPISODE_PROMPT = """把下面这段对话压缩成一段「事件记录」，用
 
 
 async def maybe_create_episode(
-    store: Store, chat: ChatClient, scope: str, every: int
+    store: Store, chat: ChatClient, scope: str, every: int, vector=None
 ) -> int:
     """每积累 every 条消息，生成一段事件记录。返回 1 表示写入了一条。"""
     since = await store.latest_episode_end(scope)
@@ -46,6 +46,8 @@ async def maybe_create_episode(
 
     end_ts = float(messages[-1].get("ts") or time.time())
     start_ts = since or float(messages[0].get("ts") or end_ts)
-    await store.add_episode(scope, start_ts, end_ts, text[:800])
+    episode_id = await store.add_episode(scope, start_ts, end_ts, text[:800])
+    if vector is not None and episode_id:
+        await vector.upsert(scope, "episode", episode_id, text[:800])
     log.info("已写入事件记录（scope=%s，%s 字）", scope, len(text))
     return 1

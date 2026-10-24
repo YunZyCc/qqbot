@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     facts_every: int = 6
     episode_every: int = 20
     retrieve_top_k: int = 5
+    # focus 类记忆（最近在忙/关注什么）的有效期，过期不再进 prompt
+    focus_ttl_days: int = 3
     reply_max_chars: int = 500
     daily_token_budget: int = 200_000
     request_timeout: float = 60.0

@@ -99,53 +99,7 @@ class ChatModule:
             await ctx.emotion.on_user_message(user_text)
 
         history = await ctx.store.recent_messages(scope, settings.max_context_messages)
-        facts = await ctx.retriever.recall(scope, user_text, settings.retrieve_top_k)
-
-        relations = await ctx.contacts.relations_of(sender)
-        self_state = await ctx.self_memory.get_state()
-        emotion_text = (
-            await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
-        )
-
-        rolling = await ctx.store.latest_summary(scope, "rolling")
-        session = await ctx.store.latest_summary(scope, "session")
-        summary_parts = []
-        if rolling:
-            summary_parts.append("长期印象：" + rolling["text"])
-        if session:
-            summary_parts.append("最近：" + session["text"])
-        summary = "\n".join(summary_parts)
-
-        diaries = await ctx.store.recent_diaries(settings.diary_prompt_days)
-        diary_text = "\n\n".join(f"{d['date']}：{d['text'][:200]}" for d in diaries)
-
-        recent_images = await ctx.store.recent_images(scope, 3)
-        images_text = "\n".join(
-            f"- {img['description']}（hash={img['sha256'][:12]}）" for img in recent_images
-        )
-
-        tools_hint = ""
-        kit = getattr(ctx, "sticker_kit", None)
-        if kit is not None and kit.emotions:
-            tools_hint = (
-                "可用表情情绪：" + "、".join(kit.emotions) + "。"
-                "想发表情包时调用 send_sticker，传情绪或场景词。"
-            )
-
-        messages = ctx.prompt.compose(
-            PromptContext(
-                persona=ctx.persona,
-                summary=summary,
-                facts=facts,
-                relations=relations,
-                self_state=self_state,
-                emotion=emotion_text,
-                diary=diary_text,
-                images=images_text,
-                tools_hint=tools_hint,
-                history=history,
-            )
-        )
+        messages = await build_reply_messages(ctx, scope, sender, user_text, history)
         reply_text, _ = await ctx.runtime.run(messages, scope=scope)
         reply_text = (reply_text or "").strip() or "……我卡了一下，再说一遍？"
 
@@ -170,9 +124,13 @@ class ChatModule:
 
         await self._maybe_auto_sticker(sender, user_text, reply_text, sctx)
 
-        # 信号词命中立即抽；否则每 N 轮兜底
+        # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
-            recent = await ctx.store.recent_messages(scope, 8)
+            since = float(await ctx.store.get_setting(f"facts_since:{scope}", "0") or 0)
+            pending = await ctx.store.messages_after(scope, since)
+            recent = pending[-20:]
+            if not recent:
+                recent = await ctx.store.recent_messages(scope, 8)
             asyncio.create_task(
                 extract_facts(
                     ctx.store,
@@ -190,10 +148,13 @@ class ChatModule:
                 scope,
                 settings.summary_every,
                 settings.summary_token_budget,
+                vector=ctx.vector,
             )
         )
         asyncio.create_task(
-            maybe_create_episode(ctx.store, ctx.llm, scope, settings.episode_every)
+            maybe_create_episode(
+                ctx.store, ctx.llm, scope, settings.episode_every, vector=ctx.vector
+            )
         )
 
     async def _maybe_auto_sticker(
@@ -228,3 +189,66 @@ class ChatModule:
             sctx.last_sticker_turn = sctx.turns
             await ctx.store.set_setting(f"sticker_count:{today}", str(count + 1))
             log.info("自动表情包：%s", result)
+
+
+async def build_reply_messages(
+    ctx, scope: str, sender: int, user_text: str, history: list[dict]
+) -> list[dict]:
+    """拼这次回复要发的完整 prompt；print_prompt 脚本也走这里，保证调试看到的就是真实内容。"""
+    settings = ctx.settings
+
+    recalled = await ctx.retriever.recall_all(scope, user_text, settings.retrieve_top_k)
+    facts = recalled["facts"]
+    episodes = recalled["episodes"]
+
+    # focus（最近在忙什么）有时效，按 TTL 过滤后补进去
+    cutoff = time.time() - settings.focus_ttl_days * 86400
+    seen = {f["id"] for f in facts}
+    for row in await ctx.store.recent_facts(scope, "focus", 5):
+        if float(row.get("updated_at") or 0) >= cutoff and row["id"] not in seen:
+            facts.append(row)
+
+    relations = await ctx.contacts.relations_of(sender)
+    self_state = await ctx.self_memory.get_state()
+    emotion_text = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
+
+    rolling = await ctx.store.latest_summary(scope, "rolling")
+    session = await ctx.store.latest_summary(scope, "session")
+    summary_parts = []
+    if rolling:
+        summary_parts.append("长期印象：" + rolling["text"])
+    if session:
+        summary_parts.append("最近：" + session["text"])
+    summary = "\n".join(summary_parts)
+
+    diaries = await ctx.store.recent_diaries(settings.diary_prompt_days)
+    diary_text = "\n\n".join(f"{d['date']}：{d['text'][:200]}" for d in diaries)
+
+    recent_images = await ctx.store.recent_images(scope, 3)
+    images_text = "\n".join(
+        f"- {img['description']}（hash={img['sha256'][:12]}）" for img in recent_images
+    )
+
+    tools_hint = ""
+    kit = getattr(ctx, "sticker_kit", None)
+    if kit is not None and kit.emotions:
+        tools_hint = (
+            "可用表情情绪：" + "、".join(kit.emotions) + "。"
+            "想发表情包时调用 send_sticker，传情绪或场景词。"
+        )
+
+    return ctx.prompt.compose(
+        PromptContext(
+            persona=ctx.persona,
+            summary=summary,
+            facts=facts,
+            episodes=episodes,
+            relations=relations,
+            self_state=self_state,
+            emotion=emotion_text,
+            diary=diary_text,
+            images=images_text,
+            tools_hint=tools_hint,
+            history=history,
+        )
+    )

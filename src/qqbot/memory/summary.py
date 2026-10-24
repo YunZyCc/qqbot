@@ -29,6 +29,7 @@ async def maybe_update_summary(
     scope: str,
     every: int,
     token_budget: int = 6000,
+    vector=None,
 ) -> bool:
     """三个触发条件任一满足就更新 session 摘要。"""
     latest = await store.latest_summary(scope, "session")
@@ -66,10 +67,12 @@ async def maybe_update_summary(
         return False
     version = (int(latest["version"]) + 1) if latest else 1
     end_ts = time.time()
-    await store.add_summary(
+    summary_id = await store.add_summary(
         scope, start_ts=since_ts, end_ts=end_ts, text=text[:800], version=version,
         kind="session",
     )
+    if vector is not None and summary_id:
+        await vector.upsert(scope, "summary", summary_id, text[:800])
     log.info("session 摘要更新到 v%s（scope=%s，%s 字）", version, scope, len(text))
     return True
 

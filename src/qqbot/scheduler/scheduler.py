@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 log = logging.getLogger(__name__)
@@ -39,6 +41,20 @@ class Scheduler:
         return self._scheduler.add_job(
             fn,
             CronTrigger.from_crontab(expr),
+            name=name,
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+
+    def once(
+        self, delay_seconds: float, fn, *, name: str = "", job_id: str | None = None
+    ):
+        """延迟执行一次，用于启动后的补跑（服务没开着时错过的定时任务）。"""
+        run_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
+        return self._scheduler.add_job(
+            fn,
+            DateTrigger(run_date=run_at),
             name=name,
             id=job_id,
             replace_existing=True,

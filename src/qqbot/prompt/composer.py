@@ -9,6 +9,7 @@ class PromptContext:
     persona: str = ""
     summary: str = ""
     facts: list[dict] = field(default_factory=list)
+    episodes: list[dict] = field(default_factory=list)
     relations: list[dict] = field(default_factory=list)
     self_state: dict = field(default_factory=dict)
     emotion: str = ""

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from .composer import PromptComposer, PromptContext
 
 REPLY_RULES = """输出要求：
@@ -40,8 +42,33 @@ def emotion_section(ctx: PromptContext) -> str:
 def facts_section(ctx: PromptContext) -> str:
     if not ctx.facts:
         return ""
-    lines = [f"- 对方{f['predicate']}：{f['object']}" for f in ctx.facts]
-    return "你记得的关于对方的信息：\n" + "\n".join(lines)
+    stable = [f for f in ctx.facts if (f.get("source") or "fact") != "focus"]
+    focus = [f for f in ctx.facts if (f.get("source") or "") == "focus"]
+
+    blocks: list[str] = []
+    if stable:
+        lines = [f"- 对方{f['predicate']}：{f['object']}" for f in stable]
+        blocks.append("你记得的关于对方的信息：\n" + "\n".join(lines))
+    if focus:
+        lines = [f"- {f['predicate']}：{f['object']}" for f in focus]
+        blocks.append("对方最近在忙/关注的事（可能已经变了，别当成永久设定）：\n" + "\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def episodes_section(ctx: PromptContext) -> str:
+    if not ctx.episodes:
+        return ""
+    lines = []
+    for ep in ctx.episodes:
+        text = (ep.get("text") or "").strip()
+        if not text:
+            continue
+        ts = float(ep.get("end_ts") or 0)
+        when = time.strftime("%m-%d", time.localtime(ts)) if ts else ""
+        lines.append(f"- {when}：{text[:160]}" if when else f"- {text[:160]}")
+    if not lines:
+        return ""
+    return "你们之间真实发生过的事（按需引用，别每次全翻出来）：\n" + "\n".join(lines)
 
 
 def relations_section(ctx: PromptContext) -> str:
@@ -89,6 +116,7 @@ def build_default_composer() -> PromptComposer:
     composer.register("self", self_section)
     composer.register("emotion", emotion_section)
     composer.register("facts", facts_section)
+    composer.register("episodes", episodes_section)
     composer.register("relations", relations_section)
     composer.register("images", images_section)
     composer.register("diary", diary_section)

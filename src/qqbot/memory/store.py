@@ -151,8 +151,10 @@ INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_messages_scope_ts ON messages(scope, ts);
 CREATE INDEX IF NOT EXISTS idx_summaries_scope ON summaries(scope, id);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status);
+-- source 进唯一键：同一 predicate 下 fact 和 focus 可以共存（在做前端 / 最近在看比赛）
+DROP INDEX IF EXISTS idx_facts_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_unique
-    ON facts(scope, subject, predicate) WHERE status='active';
+    ON facts(scope, source, subject, predicate) WHERE status='active';
 CREATE INDEX IF NOT EXISTS idx_relations_a ON relations(a_qq);
 CREATE INDEX IF NOT EXISTS idx_relations_b ON relations(b_qq);
 CREATE INDEX IF NOT EXISTS idx_episodes_scope_ts ON episodes(scope, ts);
@@ -241,7 +243,10 @@ class Store:
             "self_state", "last_proactive_at", "last_proactive_at REAL NOT NULL DEFAULT 0"
         )
 
-        await self.set_setting("schema_version", "5")
+        # v6：facts.source 从 'extract' 细分成 fact / focus
+        await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
+
+        await self.set_setting("schema_version", "6")
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -323,20 +328,39 @@ class Store:
         text: str,
         version: int,
         kind: str = "session",
-    ) -> None:
-        await self.db.execute(
+    ) -> int:
+        cur = await self.db.execute(
             "INSERT INTO summaries(scope, start_ts, end_ts, text, version, type, ts)"
             " VALUES(?,?,?,?,?,?,?)",
             (scope, start_ts, end_ts, text, version, kind, time.time()),
         )
         await self.db.commit()
+        return int(cur.lastrowid or 0)
 
     # ---------- facts ----------
-    async def active_facts(self, scope: str) -> list[dict]:
-        cur = await self.db.execute(
-            "SELECT * FROM facts WHERE scope=? AND status='active'", (scope,)
-        )
+    async def active_facts(self, scope: str, source: str | None = None) -> list[dict]:
+        if source is None:
+            cur = await self.db.execute(
+                "SELECT * FROM facts WHERE scope=? AND status='active'", (scope,)
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM facts WHERE scope=? AND status='active' AND source=?",
+                (scope, source),
+            )
         return [dict(r) for r in await cur.fetchall()]
+
+    async def recent_facts(
+        self, scope: str, source: str, limit: int = 10
+    ) -> list[dict]:
+        """按写入时间倒序取某一类事实（focus 这种有时效的用它）。"""
+        cur = await self.db.execute(
+            "SELECT * FROM facts WHERE scope=? AND status='active' AND source=?"
+            " ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (scope, source, limit),
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
 
     async def upsert_fact(
         self,
@@ -346,23 +370,24 @@ class Store:
         obj: str,
         confidence: float,
         source_msg_id: int | None = None,
+        source: str = "fact",
     ) -> int:
         """写入或更新事实，返回最终生效的 fact id（被忽略时返回旧 id 或 0）。"""
         now = time.time()
         new_status = "active" if confidence >= 0.6 else "pending"
         cur = await self.db.execute(
             "SELECT id, object, status FROM facts"
-            " WHERE scope=? AND subject=? AND predicate=?"
+            " WHERE scope=? AND subject=? AND predicate=? AND source=?"
             " AND status IN ('active','pending')",
-            (scope, subject, predicate),
+            (scope, subject, predicate, source),
         )
         row = await cur.fetchone()
         fact_id = 0
         if row is None:
             insert_cur = await self.db.execute(
                 "INSERT INTO facts(scope, subject, predicate, object, confidence,"
-                " status, source_msg_id, created_at, updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?)",
+                " status, source_msg_id, source, created_at, updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     scope,
                     subject,
@@ -371,6 +396,7 @@ class Store:
                     confidence,
                     new_status,
                     source_msg_id,
+                    source,
                     now,
                     now,
                 ),
@@ -392,8 +418,8 @@ class Store:
             )
             insert_cur = await self.db.execute(
                 "INSERT INTO facts(scope, subject, predicate, object, confidence,"
-                " status, source_msg_id, created_at, updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?)",
+                " status, source_msg_id, source, created_at, updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     scope,
                     subject,
@@ -402,6 +428,7 @@ class Store:
                     confidence,
                     new_status,
                     source_msg_id,
+                    source,
                     now,
                     now,
                 ),

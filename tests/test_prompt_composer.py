@@ -12,6 +12,7 @@ def test_section_order():
         "self",
         "emotion",
         "facts",
+        "episodes",
         "relations",
         "images",
         "diary",
@@ -68,3 +69,45 @@ def test_matches_legacy_build_messages():
         PromptContext(persona="人设", summary="摘要", facts=facts, history=history)
     )
     assert legacy == new
+
+
+def test_focus_rendered_separately():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(
+            persona="人设",
+            facts=[
+                {"id": 1, "predicate": "喜欢", "object": "猫", "source": "fact"},
+                {"id": 2, "predicate": "最近在", "object": "看 CS 比赛", "source": "focus"},
+            ],
+            history=[{"role": "user", "content": "hi"}],
+        )
+    )
+    content = messages[0]["content"]
+    assert "喜欢：猫" in content
+    assert "最近在：看 CS 比赛" in content
+    assert "可能已经变了" in content
+
+
+def test_episodes_rendered():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(
+            persona="人设",
+            episodes=[{"id": 1, "text": "用户在看 CS 比赛", "end_ts": 0.0}],
+            history=[{"role": "user", "content": "hi"}],
+        )
+    )
+    assert "用户在看 CS 比赛" in messages[0]["content"]
+
+
+def test_legacy_fact_without_source_still_renders():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(
+            persona="人设",
+            facts=[{"predicate": "喜欢", "object": "猫"}],
+            history=[{"role": "user", "content": "hi"}],
+        )
+    )
+    assert "喜欢：猫" in messages[0]["content"]
