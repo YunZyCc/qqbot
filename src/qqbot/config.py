@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     vision_max_image_mb: int = 5
     vision_cache_days: int = 7
 
+    # 联网搜索：复用 DEEPSEEK_API_KEY，不需要额外账号
+    search_enabled: bool = True
+    search_top_k: int = 5
+    search_daily_max: int = 50
+    search_cache_minutes: int = 60
+    search_timeout: float = 15.0
+    search_fetch_max_chars: int = 6000
+
     # 启用的功能模块，逗号分隔；默认只有 chat
     enabled_modules: str = "chat"
     tool_max_rounds: int = 4

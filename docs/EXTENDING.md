@@ -131,6 +131,14 @@ scope = current_scope.get()
 | `TOOLS_ENABLED` | `false` | 是否把工具暴露给模型 |
 | `TOOL_MAX_ROUNDS` | `4` | 工具调用最大轮数 |
 | `MCP_SERVERS` | 空 | JSON 数组，MCP server 配置 |
+| `SEARCH_ENABLED` | `true` | 联网搜索总开关；关掉后 `web_search` / `web_fetch` 不注册 |
+| `SEARCH_TOP_K` | `5` | 默认返回条数 |
+| `SEARCH_DAILY_MAX` | `50` | 每日搜索 + 抓取次数上限 |
+| `SEARCH_CACHE_MINUTES` | `60` | 同一 query 的缓存时间 |
+| `SEARCH_TIMEOUT` | `15` | 单次请求超时（秒） |
+| `SEARCH_FETCH_MAX_CHARS` | `6000` | `web_fetch` 返回正文的最大字符数 |
+
+搜索复用 `DEEPSEEK_API_KEY`，不需要额外账号。细节见 [SEARCH.md](SEARCH.md)。
 
 ## 迁移
 

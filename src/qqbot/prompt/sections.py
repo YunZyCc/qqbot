@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import time
 
 from .composer import PromptComposer, PromptContext
@@ -14,6 +15,15 @@ REPLY_RULES = """输出要求：
 
 def persona_section(ctx: PromptContext) -> str:
     return ctx.persona
+
+
+_WEEKDAYS = "一二三四五六日"
+
+
+def time_section(ctx: PromptContext) -> str:
+    """模型不知道今天是几号，就理解不了「最近」「今天」，搜索结果的时效也判断不了。"""
+    now = dt.datetime.now()
+    return f"现在是 {now:%Y-%m-%d} 周{_WEEKDAYS[now.weekday()]} {now:%H:%M}。"
 
 
 def self_section(ctx: PromptContext) -> str:
@@ -113,6 +123,7 @@ def rules_section(ctx: PromptContext) -> str:
 def build_default_composer() -> PromptComposer:
     composer = PromptComposer()
     composer.register("persona", persona_section)
+    composer.register("time", time_section)
     composer.register("self", self_section)
     composer.register("emotion", emotion_section)
     composer.register("facts", facts_section)

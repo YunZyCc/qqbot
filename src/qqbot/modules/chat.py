@@ -229,13 +229,22 @@ async def build_reply_messages(
         f"- {img['description']}（hash={img['sha256'][:12]}）" for img in recent_images
     )
 
-    tools_hint = ""
+    hints: list[str] = []
     kit = getattr(ctx, "sticker_kit", None)
     if kit is not None and kit.emotions:
-        tools_hint = (
+        hints.append(
             "可用表情情绪：" + "、".join(kit.emotions) + "。"
             "想发表情包时调用 send_sticker，传情绪或场景词。"
         )
+    search = getattr(ctx, "search", None)
+    if search is not None and getattr(search, "available", False):
+        hints.append(
+            "你现在**有**联网能力：凡是实时信息（价格、新闻、比分、天气、最近发生的事）"
+            "或你没把握的事实，先调用 web_search 查完再回答，不要说「我没联网」「查不了」。"
+            "如果你在对话历史里说过自己不能联网，那是升级前的旧状态，别当真。"
+            "对方发链接让你看，用 web_fetch 抓正文。"
+        )
+    tools_hint = "\n".join(hints)
 
     return ctx.prompt.compose(
         PromptContext(

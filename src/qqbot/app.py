@@ -25,6 +25,7 @@ from .persona.loader import load_persona
 from .prompt.sections import build_default_composer
 from .runtime.simple import SimpleRuntime
 from .scheduler.scheduler import Scheduler
+from .search import build_search
 from .tools.builtin import register_builtin_tools
 from .tools.mcp import load_mcp_tools
 from .tools.registry import ToolRegistry
@@ -62,6 +63,7 @@ class AppContext:
     vector: object | None = None
     retriever: object | None = None
     vision: object | None = None
+    search: object | None = None
     stickers: object | None = None
     sticker_kit: object | None = None
     images: object | None = None
@@ -118,6 +120,9 @@ async def build_context(settings: Settings | None = None) -> AppContext:
         policy=OwnerOnlyPolicy(settings.owner_qq),
         sessions=SessionRegistry(),
     )
+
+    # 搜索要在工具注册前构建：不可用时工具不注册
+    ctx.search = build_search(settings)
 
     actions = ActionRegistry()
     tools = ToolRegistry()
@@ -193,6 +198,8 @@ async def shutdown(ctx: AppContext) -> None:
         await ctx.sticker_kit.close()
     if ctx.vision is not None:
         await ctx.vision.close()
+    if ctx.search is not None:
+        await ctx.search.close()
     if ctx.embedder is not None:
         await ctx.embedder.close()
     await ctx.api.close()
