@@ -2,13 +2,22 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from qqbot.config import Settings
 from qqbot.main import create_app
 
 
-def test_ws_endpoint_accepts_onebot_event(monkeypatch):
-    monkeypatch.setenv("OWNER_QQ", "12345")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-    app = create_app()
+def _settings(tmp_path) -> Settings:
+    return Settings(
+        _env_file=None,
+        owner_qq=12345,
+        deepseek_api_key="sk-test",
+        data_dir=tmp_path,
+        persona_file=tmp_path / "persona.md",
+    )
+
+
+def test_ws_endpoint_accepts_onebot_event(tmp_path):
+    app = create_app(_settings(tmp_path))
     with TestClient(app) as client:
         with client.websocket_connect("/onebot/v11/ws") as ws:
             ws.send_text(
@@ -19,10 +28,8 @@ def test_ws_endpoint_accepts_onebot_event(monkeypatch):
             ws.send_text('{"post_type":"meta_event","meta_event_type":"heartbeat"}')
 
 
-def test_ws_endpoint_rejects_malformed_json(monkeypatch):
-    monkeypatch.setenv("OWNER_QQ", "12345")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-    app = create_app()
+def test_ws_endpoint_rejects_malformed_json(tmp_path):
+    app = create_app(_settings(tmp_path))
     with TestClient(app) as client:
         with client.websocket_connect("/onebot/v11/ws") as ws:
             ws.send_text("not-json")
