@@ -11,24 +11,28 @@ from .store import Store
 log = logging.getLogger(__name__)
 
 DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「小毒」。
+今天是 {date}。
 今天和对方聊了这些：
 {conversation}
 
 要求：
 - 300~500 字，口语，有人设：幽默、偶尔毒舌、体贴。
 - 写清楚：聊了什么、我的感受、对明天的期待。
-- 不要流水账，不要 Markdown，不要编造对话里没有的事。
+- 只能写对话里真实发生的事，不要编造日期、星期、天气、温度。
+- 不要流水账，不要 Markdown。
 - 输出 JSON：{{"text": "...", "mood": "一个词", "highlights": ["要点1", "要点2"]}}
 只输出 JSON。"""
 
 DIARY_SOLO_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「小毒」。
+今天是 {date}。
 今天对方没有来找我。
 
 要求：
 - 200~400 字，口语，有人设：幽默、偶尔毒舌、体贴。
 - 写我自己的状态：整理了记忆、翻了翻旧的聊天、想了点小事、对明天的期待。
+- 只能写「今天」发生的事；不要编造具体日期、星期、天气、温度。
 - 不要虚构和对方的对话；不要写吃饭逛街这类物理生活。
-- 输出 JSON：{"text": "...", "mood": "一个词", "highlights": ["要点1", "要点2"]}
+- 输出 JSON：{{"text": "...", "mood": "一个词", "highlights": ["要点1", "要点2"]}}
 只输出 JSON。"""
 
 _JSON_OBJ = re.compile(r"\{.*\}", re.S)
@@ -69,9 +73,11 @@ async def generate_diary(store: Store, chat: ChatClient, day: dt.date) -> bool:
         for m in messages[-80:]:
             speaker = "对方" if m["role"] == "user" else "我"
             lines.append(f"{speaker}: {m['content']}")
-        prompt = DIARY_REVIEW_PROMPT.format(conversation="\n".join(lines)[-6000:])
+        prompt = DIARY_REVIEW_PROMPT.format(
+            date=day.isoformat(), conversation="\n".join(lines)[-6000:]
+        )
     else:
-        prompt = DIARY_SOLO_PROMPT
+        prompt = DIARY_SOLO_PROMPT.format(date=day.isoformat())
 
     try:
         text, _ = await chat.complete(
