@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # 单段字数上限；1~40 字，像真人连发短消息
     reply_segment_max_chars: int = 40
     # 发几条的权重，逗号分隔，对应 1/2/3/4/5 段。越往后越少
-    reply_segment_weights: str = "50,25,15,7,3"
+    reply_segment_weights: str = "65,22,8,3,2"
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
     reply_delay_max: float = 1.0
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
                 continue
             if value > 0:
                 items.append(value)
-        return items or [50.0, 25.0, 15.0, 7.0, 3.0]
+        return items or [65.0, 22.0, 8.0, 3.0, 2.0]
 
     # 群聊：记录按 group:<群号> 隔离，不跟私聊混
     group_enabled: bool = True

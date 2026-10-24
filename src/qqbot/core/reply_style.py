@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 
-DEFAULT_WEIGHTS = (50.0, 25.0, 15.0, 7.0, 3.0)
+DEFAULT_WEIGHTS = (65.0, 22.0, 8.0, 3.0, 2.0)
 
 
 def _pick_segment_count(weights: list[float] | None, max_segments: int) -> int:
