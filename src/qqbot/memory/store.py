@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role      TEXT    NOT NULL,
     content   TEXT    NOT NULL,
     msg_id    INTEGER,
+    source    TEXT    NOT NULL DEFAULT 'reply',
     ts        REAL    NOT NULL
 );
 
@@ -69,6 +70,11 @@ CREATE TABLE IF NOT EXISTS self_state (
     mood             TEXT NOT NULL DEFAULT '',
     focus            TEXT NOT NULL DEFAULT '',
     commitments_json TEXT NOT NULL DEFAULT '[]',
+    ignored_count    INTEGER NOT NULL DEFAULT 0,
+    sulk_until       REAL NOT NULL DEFAULT 0,
+    relief_until     REAL NOT NULL DEFAULT 0,
+    last_proactive   TEXT NOT NULL DEFAULT '',
+    last_proactive_at REAL NOT NULL DEFAULT 0,
     updated_at       REAL NOT NULL
 );
 
@@ -113,6 +119,27 @@ CREATE TABLE IF NOT EXISTS embeddings (
     UNIQUE(scope, ref_type, ref_id, model)
 );
 
+CREATE TABLE IF NOT EXISTS image_refs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope       TEXT NOT NULL,
+    msg_id      INTEGER,
+    sha256      TEXT NOT NULL,
+    mime        TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stickers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    key         TEXT NOT NULL UNIQUE,
+    file        TEXT NOT NULL,
+    tags        TEXT NOT NULL DEFAULT '',
+    emotion     TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
@@ -131,6 +158,9 @@ CREATE INDEX IF NOT EXISTS idx_relations_b ON relations(b_qq);
 CREATE INDEX IF NOT EXISTS idx_episodes_scope_ts ON episodes(scope, ts);
 CREATE INDEX IF NOT EXISTS idx_diaries_scope ON diaries(scope, date);
 CREATE INDEX IF NOT EXISTS idx_embeddings_scope ON embeddings(scope, ref_type);
+CREATE INDEX IF NOT EXISTS idx_image_refs_scope ON image_refs(scope, id);
+CREATE INDEX IF NOT EXISTS idx_image_refs_hash ON image_refs(sha256);
+CREATE INDEX IF NOT EXISTS idx_stickers_emotion ON stickers(emotion);
 """
 
 
@@ -192,8 +222,26 @@ class Store:
         await self._ensure_column(
             "facts", "source", "source TEXT NOT NULL DEFAULT 'extract'"
         )
+        await self._ensure_column(
+            "messages", "source", "source TEXT NOT NULL DEFAULT 'reply'"
+        )
+        await self._ensure_column(
+            "self_state", "ignored_count", "ignored_count INTEGER NOT NULL DEFAULT 0"
+        )
+        await self._ensure_column(
+            "self_state", "sulk_until", "sulk_until REAL NOT NULL DEFAULT 0"
+        )
+        await self._ensure_column(
+            "self_state", "relief_until", "relief_until REAL NOT NULL DEFAULT 0"
+        )
+        await self._ensure_column(
+            "self_state", "last_proactive", "last_proactive TEXT NOT NULL DEFAULT ''"
+        )
+        await self._ensure_column(
+            "self_state", "last_proactive_at", "last_proactive_at REAL NOT NULL DEFAULT 0"
+        )
 
-        await self.set_setting("schema_version", "4")
+        await self.set_setting("schema_version", "5")
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -206,11 +254,12 @@ class Store:
         role: str,
         content: str,
         msg_id: int | None = None,
+        source: str = "reply",
     ) -> None:
         await self.db.execute(
-            "INSERT INTO messages(scope, sender_id, role, content, msg_id, ts)"
-            " VALUES(?,?,?,?,?,?)",
-            (scope, sender_id, role, content, msg_id, time.time()),
+            "INSERT INTO messages(scope, sender_id, role, content, msg_id, source, ts)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (scope, sender_id, role, content, msg_id, source, time.time()),
         )
         await self.db.commit()
 
@@ -496,6 +545,80 @@ class Store:
             (scope, ref_type, model),
         )
         await self.db.commit()
+
+    # ---------- image refs ----------
+    async def add_image_ref(
+        self,
+        scope: str,
+        msg_id: int | None,
+        sha256: str,
+        mime: str,
+        path: str,
+        description: str,
+    ) -> int:
+        cur = await self.db.execute(
+            "INSERT INTO image_refs(scope, msg_id, sha256, mime, path, description, created_at)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (scope, msg_id, sha256, mime, path, description, time.time()),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid or 0)
+
+    async def recent_images(self, scope: str, limit: int = 3) -> list[dict]:
+        cur = await self.db.execute(
+            "SELECT * FROM image_refs WHERE scope=? ORDER BY id DESC LIMIT ?", (scope, limit)
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    async def get_image_by_hash(self, sha256: str) -> dict | None:
+        cur = await self.db.execute(
+            "SELECT * FROM image_refs WHERE sha256=? ORDER BY id DESC LIMIT 1", (sha256,)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    # ---------- stickers ----------
+    async def upsert_sticker(
+        self,
+        key: str,
+        file: str,
+        tags: str = "",
+        emotion: str = "",
+        description: str = "",
+    ) -> int:
+        await self.db.execute(
+            "INSERT INTO stickers(key, file, tags, emotion, description)"
+            " VALUES(?,?,?,?,?)"
+            " ON CONFLICT(key) DO UPDATE SET file=excluded.file, tags=excluded.tags,"
+            " emotion=excluded.emotion, description=excluded.description",
+            (key, file, tags, emotion, description),
+        )
+        await self.db.commit()
+        cur = await self.db.execute("SELECT id FROM stickers WHERE key=?", (key,))
+        row = await cur.fetchone()
+        return int(row["id"]) if row else 0
+
+    async def get_sticker(self, sticker_id: int) -> dict | None:
+        cur = await self.db.execute(
+            "SELECT * FROM stickers WHERE id=? AND enabled=1", (sticker_id,)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def search_stickers_keyword(self, query: str, k: int = 3) -> list[dict]:
+        q = f"%{query.strip()}%"
+        cur = await self.db.execute(
+            "SELECT * FROM stickers WHERE enabled=1"
+            " AND (tags LIKE ? OR emotion LIKE ? OR description LIKE ? OR key LIKE ?)"
+            " LIMIT ?",
+            (q, q, q, q, k),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def list_stickers(self) -> list[dict]:
+        cur = await self.db.execute("SELECT * FROM stickers WHERE enabled=1")
+        return [dict(r) for r in await cur.fetchall()]
 
     # ---------- settings ----------
     async def get_setting(self, key: str, default: str = "") -> str:

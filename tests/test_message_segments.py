@@ -8,7 +8,7 @@ from qqbot.core.message import (
     seg_mface,
     seg_record,
     seg_text,
-    to_text,
+    to_user_text,
 )
 
 
@@ -25,8 +25,8 @@ def test_segment_shapes():
 
 
 def test_to_text_keeps_placeholders():
-    text = to_text([seg_text("你好"), seg_face(14), seg_image("x.png"), seg_record("v.mp3")])
+    text = to_user_text([seg_text("你好"), seg_face(14), seg_image("x.png"), seg_record("v.mp3")])
     assert "你好" in text
-    assert "[表情:14]" in text
+    assert "[表情:微笑]" in text
     assert "[图片]" in text
     assert "[语音]" in text

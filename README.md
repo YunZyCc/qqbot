@@ -137,6 +137,16 @@ Unregister-ScheduledTask -TaskName qqbot-autostart -Confirm:$false
 | `TOOLS_ENABLED` | 是否把工具暴露给模型 | `false` |
 | `TOOL_MAX_ROUNDS` | 工具调用最大轮数 | `4` |
 | `MCP_SERVERS` | MCP server 配置（JSON 数组） | 空 |
+| `REPLY_DELAY_MIN/MAX` | 回复前随机延迟（秒） | `0.5` / `3.0` |
+| `REPLY_SEGMENTS_MAX` | 一次最多回几条 | `3` |
+| `PROACTIVE_ENABLED` | 是否主动找你 | `true` |
+| `PROACTIVE_IDLE_MIN/MAX` | 空闲多久才可能主动（分钟，随机） | `30` / `90` |
+| `PROACTIVE_DAILY_MAX` | 每天主动上限 | `5` |
+| `STICKER_DIR` | 本地表情包目录 | `data/stickers` |
+| `VISION_ENABLED` | 是否启用图片理解 | `true` |
+| `VISION_MODEL` | 视觉模型 | `minicpm-v:8b` |
+
+> 多段回复、主动开口、被晾情绪、表情包、图片理解与多轮追问的完整说明见 [docs/BEHAVIOR.md](docs/BEHAVIOR.md)。
 
 > 完整配置见 `src/qqbot/config.py`。
 

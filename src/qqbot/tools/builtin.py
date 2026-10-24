@@ -19,7 +19,12 @@ class MemoryWriteParams(BaseModel):
 
 
 class StickerParams(BaseModel):
-    key: str
+    query: str
+
+
+class LookAtImageParams(BaseModel):
+    sha256: str
+    question: str = ""
 
 
 def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
@@ -36,9 +41,42 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
         await ctx.store.upsert_fact(scope, "user", predicate, object, confidence)
         return f"记住了：{predicate} {object}"
 
-    async def send_sticker(key: str) -> str:
-        # 表情包库在 media 模块实现；这里先占位，避免模型调用后无响应
-        return f"表情包库尚未配置，无法发送 {key!r}"
+    async def send_sticker(query: str) -> str:
+        if ctx.stickers is None:
+            return "表情包库未启用"
+        hits = await ctx.stickers.search(query, 3)
+        if not hits:
+            return "没有找到合适的表情包"
+        best = hits[0]
+        path = ctx.stickers.resolve(best["file"])
+        if path is None:
+            return "表情包文件无效"
+        try:
+            await ctx.api.call(
+                "send_private_msg",
+                user_id=ctx.settings.owner_qq,
+                message=[{"type": "image", "data": {"file": str(path)}}],
+            )
+        except Exception:
+            return "表情包发送失败"
+        return f"已发送表情包：{best['key']}"
+
+    async def look_at_image(sha256: str, question: str) -> str:
+        if ctx.vision is None or ctx.images is None:
+            return "视觉功能未启用"
+        ref = await ctx.store.get_image_by_hash(sha256)
+        if ref is None:
+            return "找不到这张图"
+        path = ctx.images.load(sha256)
+        if path is None:
+            return "图片缓存已过期"
+        try:
+            description = await ctx.vision.describe(
+                path.read_bytes(), ref["mime"], question
+            )
+        except Exception:
+            return "图片识别失败了"
+        return description or "看不清"
 
     registry.register(
         Tool(
@@ -59,8 +97,16 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
     registry.register(
         Tool(
             name="send_sticker",
-            description="按关键词发送一个表情包",
+            description="按语义搜索并发送一个表情包，例如「开心」「无语」「摸摸头」",
             params=StickerParams,
             handler=send_sticker,
+        )
+    )
+    registry.register(
+        Tool(
+            name="look_at_image",
+            description="针对对方最近发的图片追问细节（用描述里给的 hash）",
+            params=LookAtImageParams,
+            handler=look_at_image,
         )
     )

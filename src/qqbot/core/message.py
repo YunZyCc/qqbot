@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from ..onebot.face_map import face_name
+
 
 def seg_text(text: str) -> dict:
     return {"type": "text", "data": {"text": text}}
@@ -40,24 +42,34 @@ def build(segments: list[dict]) -> list[dict]:
     return [s for s in segments if s]
 
 
-def to_text(segments: list[dict]) -> str:
-    """把消息段里的文本拼出来；表情/图片/语音用占位符表示。"""
-    chunks: list[str] = []
+def image_segments(segments: list[dict]) -> list[dict]:
+    """取出消息里的图片段（含表情包图片）。"""
+    return [
+        seg
+        for seg in segments or []
+        if isinstance(seg, dict) and seg.get("type") == "image"
+    ]
+
+
+def to_user_text(segments: list[dict]) -> str:
+    """把用户发来的消息段转成可读文本，表情/图片用描述占位。"""
+    parts: list[str] = []
     for seg in segments or []:
         if not isinstance(seg, dict):
             continue
         data = seg.get("data") or {}
         kind = seg.get("type")
         if kind == "text":
-            chunks.append(str(data.get("text", "")))
+            parts.append(str(data.get("text", "")))
         elif kind == "face":
-            chunks.append(f"[表情:{data.get('id', '')}]")
+            parts.append(f"[表情:{face_name(data.get('id'))}]")
         elif kind == "mface":
-            chunks.append("[表情包]")
+            parts.append(f"[表情包:{data.get('summary') or '表情包'}]")
         elif kind == "image":
-            chunks.append("[图片]")
+            sub = str(data.get("sub_type") or "")
+            parts.append("[表情包]" if sub == "1" else "[图片]")
         elif kind == "record":
-            chunks.append("[语音]")
+            parts.append("[语音]")
         elif kind == "at":
-            chunks.append(f"@{data.get('qq', '')}")
-    return "".join(chunks).strip()
+            parts.append(f"@{data.get('qq', '')}")
+    return "".join(parts).strip()

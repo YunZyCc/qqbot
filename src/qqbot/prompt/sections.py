@@ -4,8 +4,8 @@ from .composer import PromptComposer, PromptContext
 
 REPLY_RULES = """输出要求：
 - 像微信聊天一样自然，短句、口语。
+- 一次回 1~3 条，用 ||| 分隔，每条尽量短（10~60 字），像连发的消息。
 - 不要 Markdown、不要列表、不要标题、不要加粗。
-- 默认 120 字以内，对方认真问事情时可以稍长。
 - 不要每句都反问，不要客服腔。"""
 
 
@@ -30,6 +30,12 @@ def self_section(ctx: PromptContext) -> str:
     return "\n".join(lines)
 
 
+def emotion_section(ctx: PromptContext) -> str:
+    if not ctx.emotion.strip():
+        return ""
+    return "你心里那点事：\n" + ctx.emotion.strip()
+
+
 def facts_section(ctx: PromptContext) -> str:
     if not ctx.facts:
         return ""
@@ -45,6 +51,15 @@ def relations_section(ctx: PromptContext) -> str:
         for r in ctx.relations
     ]
     return "你记得的人际关系：\n" + "\n".join(lines)
+
+
+def images_section(ctx: PromptContext) -> str:
+    if not ctx.images.strip():
+        return ""
+    return (
+        "最近对方发的图片（需要细节时用 look_at_image 工具追问）：\n"
+        + ctx.images.strip()
+    )
 
 
 def diary_section(ctx: PromptContext) -> str:
@@ -71,8 +86,10 @@ def build_default_composer() -> PromptComposer:
     composer = PromptComposer()
     composer.register("persona", persona_section)
     composer.register("self", self_section)
+    composer.register("emotion", emotion_section)
     composer.register("facts", facts_section)
     composer.register("relations", relations_section)
+    composer.register("images", images_section)
     composer.register("diary", diary_section)
     composer.register("summary", summary_section)
     composer.register("tools", tools_hint_section)

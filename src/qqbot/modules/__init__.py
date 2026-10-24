@@ -6,6 +6,7 @@ from .friends import FriendsModule
 from .group import GroupModule
 from .maintenance import MaintenanceModule
 from .media import MediaModule
+from .proactive import ProactiveModule
 from .profile import ProfileModule
 from .qzone import QzoneModule
 from .self_memory import SelfMemoryModule
@@ -14,6 +15,7 @@ from .self_memory import SelfMemoryModule
 MODULES = [
     ChatModule(),
     DiaryModule(),
+    ProactiveModule(),
     MaintenanceModule(),
     GroupModule(),
     FriendsModule(),

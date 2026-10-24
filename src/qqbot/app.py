@@ -10,10 +10,13 @@ from .config import Settings, get_settings
 from .core.bus import EventBus
 from .core.session import OwnerOnlyPolicy, SessionPolicy, SessionRegistry
 from .llm.client import ChatClient
+from .media import ImageCache
 from .memory.contacts import ContactStore
 from .memory.embedding import NullEmbedding, OpenAICompatibleEmbedding
+from .memory.emotion import EmotionTracker
 from .memory.hybrid import HybridRetriever
 from .memory.self_memory import SelfMemory
+from .memory.stickers import StickerLibrary
 from .memory.store import Store
 from .memory.vector import NumpyVectorIndex
 from .onebot.api import OneBotAPI
@@ -24,6 +27,7 @@ from .scheduler.scheduler import Scheduler
 from .tools.builtin import register_builtin_tools
 from .tools.mcp import load_mcp_tools
 from .tools.registry import ToolRegistry
+from .vision import NullVision, OpenAICompatibleVision
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +60,10 @@ class AppContext:
     embedder: object | None = None
     vector: object | None = None
     retriever: object | None = None
+    vision: object | None = None
+    stickers: object | None = None
+    emotion: object | None = None
+    last_user_at: float = 0.0
     modules: list = field(default_factory=list)
 
 
@@ -118,6 +126,7 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     ctx.tools = tools
     ctx.contacts = ContactStore(store)
     ctx.self_memory = SelfMemory(store)
+    ctx.emotion = EmotionTracker(ctx.self_memory, settings)
     ctx.prompt = build_default_composer()
     ctx.scheduler = Scheduler()
     ctx.scheduler.start()
@@ -126,6 +135,25 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     ctx.embedder = embedder
     ctx.vector = NumpyVectorIndex(store, embedder) if not isinstance(embedder, NullEmbedding) else None
     ctx.retriever = HybridRetriever(store, ctx.vector)
+
+    if settings.vision_enabled:
+        ctx.vision = OpenAICompatibleVision(
+            settings.vision_base_url,
+            settings.vision_api_key,
+            settings.vision_model,
+            settings.vision_timeout,
+        )
+        log.info("视觉模型已配置：%s", settings.vision_model)
+    else:
+        ctx.vision = NullVision()
+    ctx.images = ImageCache(
+        settings.data_dir / "images", settings.vision_max_image_mb
+    )
+    ctx.stickers = StickerLibrary(store, settings, ctx.vector)
+    try:
+        await ctx.stickers.scan()
+    except Exception:
+        log.exception("构建表情包索引失败")
 
     ctx.runtime = SimpleRuntime(
         ctx.llm,
@@ -152,6 +180,8 @@ async def build_context(settings: Settings | None = None) -> AppContext:
 async def shutdown(ctx: AppContext) -> None:
     if ctx.scheduler is not None:
         ctx.scheduler.shutdown()
+    if ctx.vision is not None:
+        await ctx.vision.close()
     if ctx.embedder is not None:
         await ctx.embedder.close()
     await ctx.api.close()

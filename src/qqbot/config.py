@@ -59,6 +59,48 @@ class Settings(BaseSettings):
     embedding_concurrency: int = 2
     embedding_timeout: float = 30.0
 
+    # 回复风格
+    reply_segments_max: int = 3
+    reply_delay_enabled: bool = True
+    reply_delay_min: float = 0.5
+    reply_delay_max: float = 3.0
+    segment_interval_min: float = 1.0
+    segment_interval_max: float = 2.0
+
+    # 主动开口
+    proactive_enabled: bool = True
+    proactive_check_minutes: int = 10
+    proactive_daily_max: int = 5
+    proactive_min_gap_minutes: int = 90
+    proactive_idle_min: int = 30
+    proactive_idle_max: int = 90
+    proactive_quiet_start: int = 0
+    proactive_quiet_end: int = 7
+    proactive_probability: float = 0.6
+    proactive_miss_hours: int = 6
+
+    # 被晾情绪
+    emotion_ignored_sulk_after: int = 2
+    emotion_sulk_hours: float = 2.0
+    emotion_relief_minutes: int = 30
+    emotion_fade_hours: float = 3.0
+
+    # 表情包
+    sticker_enabled: bool = True
+    sticker_dir: Path = Path("data/stickers")
+    sticker_auto_rate: float = 0.15
+    sticker_min_score: float = 0.6
+    sticker_max_size_kb: int = 2048
+
+    # 视觉理解
+    vision_enabled: bool = True
+    vision_base_url: str = "http://127.0.0.1:11434/v1"
+    vision_api_key: str = "ollama"
+    vision_model: str = "minicpm-v:8b"
+    vision_timeout: float = 120.0
+    vision_max_image_mb: int = 5
+    vision_cache_days: int = 7
+
     # 启用的功能模块，逗号分隔；默认只有 chat
     enabled_modules: str = "chat"
     tool_max_rounds: int = 4

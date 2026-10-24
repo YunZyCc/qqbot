@@ -10,8 +10,10 @@ def test_section_order():
     assert composer.sections() == [
         "persona",
         "self",
+        "emotion",
         "facts",
         "relations",
+        "images",
         "diary",
         "summary",
         "tools",
