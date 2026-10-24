@@ -7,7 +7,6 @@ import random
 import re
 import time
 
-from ..core.commands import handle_command
 from ..core.events import Event, EventKind
 from ..core.message import image_segments, to_user_text
 from ..core.reply_style import reply_delay, segment_interval, split_reply
@@ -49,13 +48,6 @@ class ChatModule:
             return
 
         ctx.last_user_at = time.time()
-
-        # 管理员命令不走模型
-        if user_text.startswith("/") and ev.sender_id == ctx.settings.owner_qq:
-            reply = await handle_command(ctx, user_text)
-            if reply:
-                await ctx.api.send_private_msg(ev.sender_id, reply)
-            return
 
         key = session_from_event(ev)
         if key is None:
