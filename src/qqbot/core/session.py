@@ -55,6 +55,7 @@ class SessionContext:
     key: SessionKey
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     turns: int = 0
+    last_sticker_turn: int = -10
 
 
 class SessionRegistry:

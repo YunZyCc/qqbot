@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 import random
+import re
 import time
 
 from ..core.events import Event, EventKind
@@ -15,6 +17,10 @@ from ..memory.summary import maybe_update_summary
 from ..prompt.composer import PromptContext
 
 log = logging.getLogger(__name__)
+
+# 只有「祈使句式」的要图才 100% 触发，避免「表情包好可爱」也发
+_WANTS_STICKER = re.compile(r"(发|来|给|整|上|要)\s*[个张条套]?\s*(表情|表情包|图)")
+_WANTS_AGAIN = re.compile(r"再(发|来)一?[个张条]")
 
 
 class ChatModule:
@@ -162,7 +168,7 @@ class ChatModule:
         sctx.turns += 1
         log.info("已回复 %s 段，共 %s 字", len(parts), len(reply_text))
 
-        await self._maybe_auto_sticker(sender, user_text, reply_text)
+        await self._maybe_auto_sticker(sender, user_text, reply_text, sctx)
 
         # 信号词命中立即抽；否则每 N 轮兜底
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -191,39 +197,34 @@ class ChatModule:
         )
 
     async def _maybe_auto_sticker(
-        self, sender: int, user_text: str, reply_text: str
+        self, sender: int, user_text: str, reply_text: str, sctx: SessionContext
     ) -> None:
-        """用户明确要表情包、或按概率，自动补一张。"""
+        """显式要图时必发；否则按概率补一张，带冷却和每日上限。"""
         ctx = self.ctx
         settings = ctx.settings
         if not settings.sticker_enabled or ctx.stickers is None:
             return
 
         # 模型已经发过表情包就不再补
-        used = getattr(ctx.runtime, "last_tools", [])
-        if "send_sticker" in used:
+        if "send_sticker" in getattr(ctx.runtime, "last_tools", []):
             return
 
-        wants = any(
-            word in user_text
-            for word in (
-                "表情包",
-                "表情",
-                "斗图",
-                "发个图",
-                "来张图",
-                "再发一个",
-                "再来一个",
-                "换个表情",
-                "看看表情",
-                "发一个",
-                "来一个",
-            )
-        )
-        if not wants and random.random() > settings.sticker_auto_rate:
+        # 冷却：两次表情包之间至少隔若干轮
+        if sctx.turns - sctx.last_sticker_turn < settings.sticker_min_turns_gap:
+            return
+
+        wants = bool(_WANTS_STICKER.search(user_text)) or bool(_WANTS_AGAIN.search(user_text))
+        if not wants and random.random() >= settings.sticker_auto_rate:
+            return
+
+        today = dt.date.today().isoformat()
+        count = int(await ctx.store.get_setting(f"sticker_count:{today}", "0") or 0)
+        if count >= settings.sticker_daily_max:
             return
 
         query = (reply_text or user_text)[:40]
         result = await ctx.tools.run("send_sticker", {"query": query})
         if result.startswith("已发送"):
+            sctx.last_sticker_turn = sctx.turns
+            await ctx.store.set_setting(f"sticker_count:{today}", str(count + 1))
             log.info("自动表情包：%s", result)

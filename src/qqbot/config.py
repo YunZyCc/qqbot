@@ -88,7 +88,9 @@ class Settings(BaseSettings):
     # 表情包
     sticker_enabled: bool = True
     sticker_dir: Path = Path("data/stickers")
-    sticker_auto_rate: float = 0.3
+    sticker_auto_rate: float = 0.15
+    sticker_daily_max: int = 20
+    sticker_min_turns_gap: int = 2
     sticker_min_score: float = 0.6
     sticker_max_size_kb: int = 2048
     sticker_sub_type: str = "1"
