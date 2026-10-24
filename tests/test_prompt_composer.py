@@ -12,6 +12,7 @@ def test_section_order():
         "self",
         "facts",
         "relations",
+        "diary",
         "summary",
         "tools",
         "rules",

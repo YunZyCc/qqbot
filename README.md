@@ -123,7 +123,17 @@ Unregister-ScheduledTask -TaskName qqbot-autostart -Confirm:$false
 | `ONEBOT_WS_PATH` | 反向 WS 路径 | `/onebot/v11/ws` |
 | `HOST` / `PORT` | 本服务监听地址 | `127.0.0.1:8080` |
 | `DAILY_TOKEN_BUDGET` | 每日 token 上限 | `200000` |
-| `ENABLED_MODULES` | 启用的模块，逗号分隔 | `chat` |
+| `ENABLED_MODULES` | 启用的模块，逗号分隔 | `chat,diary,maintenance` |
+| `SUMMARY_EVERY` | 每多少条更新一次会话摘要 | `10` |
+| `SUMMARY_TOKEN_BUDGET` | 上下文涨到多少字也触发摘要 | `6000` |
+| `EPISODE_EVERY` | 每多少条生成一段事件记录 | `20` |
+| `DIARY_ENABLED` | 是否写日记 | `true` |
+| `DIARY_HOUR` / `DIARY_MINUTE` | 每日日记时间 | `0:10` |
+| `DIARY_BACKFILL_DAYS` | 启动时最多补写几天 | `7` |
+| `DIARY_PROMPT_DAYS` | prompt 里带几篇日记 | `3` |
+| `MEMORY_VECTOR_ENABLED` | 是否启用向量检索 | `true` |
+| `EMBEDDING_BASE_URL` | embedding 接口（Ollama） | `http://127.0.0.1:11434/v1` |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIM` | 模型与维度 | `bge-m3` / `1024` |
 | `TOOLS_ENABLED` | 是否把工具暴露给模型 | `false` |
 | `TOOL_MAX_ROUNDS` | 工具调用最大轮数 | `4` |
 | `MCP_SERVERS` | MCP server 配置（JSON 数组） | 空 |
@@ -143,13 +153,14 @@ src/qqbot/
   tools/            模型工具注册表 + MCP 骨架
   runtime/          AgentRuntime 协议 + SimpleRuntime
   prompt/           PromptComposer + sections
-  memory/           SQLite 存储、scope、联系人、关系、自我记忆
-  modules/          功能模块（chat/qzone/profile/friends/group/media/self_memory）
+  memory/           SQLite 存储、scope、联系人、关系、自我记忆、事件、日记、向量
+  modules/          功能模块（chat/diary/maintenance/qzone/profile/friends/group/media/self_memory）
   scheduler/        APScheduler 封装
   persona/          persona.md 与人设加载
 docs/EXTENDING.md   扩展指南
+docs/MEMORY.md      记忆系统说明（六层/写入/检索/日记/向量）
 tests/              单元测试（pytest）
-scripts/            启动 / 停止 / 安装自启
+scripts/            启动 / 停止 / 安装自启 / 记忆统计
 launch.vbs          无窗口启动入口
 stop.vbs            无窗口停止入口
 login.html          自动刷新的扫码页
