@@ -118,6 +118,14 @@ class ChatModule:
             f"- {img['description']}（hash={img['sha256'][:12]}）" for img in recent_images
         )
 
+        tools_hint = ""
+        kit = getattr(ctx, "sticker_kit", None)
+        if kit is not None and kit.emotions:
+            tools_hint = (
+                "可用表情情绪：" + "、".join(kit.emotions) + "。"
+                "想发表情包时调用 send_sticker，传情绪或场景词。"
+            )
+
         messages = ctx.prompt.compose(
             PromptContext(
                 persona=ctx.persona,
@@ -128,6 +136,7 @@ class ChatModule:
                 emotion=emotion_text,
                 diary=diary_text,
                 images=images_text,
+                tools_hint=tools_hint,
                 history=history,
             )
         )
@@ -195,23 +204,26 @@ class ChatModule:
         if "send_sticker" in used:
             return
 
-        wants = any(word in user_text for word in ("表情包", "表情", "斗图", "发个图"))
+        wants = any(
+            word in user_text
+            for word in (
+                "表情包",
+                "表情",
+                "斗图",
+                "发个图",
+                "来张图",
+                "再发一个",
+                "再来一个",
+                "换个表情",
+                "看看表情",
+                "发一个",
+                "来一个",
+            )
+        )
         if not wants and random.random() > settings.sticker_auto_rate:
             return
 
-        query = reply_text[:40] if reply_text else user_text
-        hits = await ctx.stickers.search(query, 1)
-        if not hits:
-            return
-        path = ctx.stickers.resolve(hits[0]["file"])
-        if path is None:
-            return
-        try:
-            await ctx.api.call(
-                "send_private_msg",
-                user_id=sender,
-                message=[{"type": "image", "data": {"file": str(path)}}],
-            )
-            log.info("自动发送表情包：%s", hits[0]["key"])
-        except Exception:
-            log.exception("自动发送表情包失败")
+        query = (reply_text or user_text)[:40]
+        result = await ctx.tools.run("send_sticker", {"query": query})
+        if result.startswith("已发送"):
+            log.info("自动表情包：%s", result)

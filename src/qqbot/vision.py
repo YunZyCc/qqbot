@@ -45,7 +45,7 @@ class OpenAICompatibleVision:
         self.base = base_url.rstrip("/")
         self.key = api_key
         self.model = model
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, trust_env=False)
 
     async def describe(self, image: bytes, mime: str, question: str = "") -> str:
         encoded = base64.b64encode(image).decode()

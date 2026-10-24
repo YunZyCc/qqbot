@@ -45,7 +45,7 @@ class OpenAICompatibleEmbedding:
         self.key = api_key
         self.model = model
         self.dim = dim
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, trust_env=False)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:

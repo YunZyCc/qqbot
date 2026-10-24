@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel
 
 from ..memory.context import current_scope
 from ..memory.retrieve import retrieve
 from .registry import Tool, ToolRegistry
+
+log = logging.getLogger(__name__)
 
 
 class MemorySearchParams(BaseModel):
@@ -41,25 +45,40 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
         await ctx.store.upsert_fact(scope, "user", predicate, object, confidence)
         return f"记住了：{predicate} {object}"
 
-    async def send_sticker(query: str) -> str:
-        if ctx.stickers is None:
-            return "表情包库未启用"
-        hits = await ctx.stickers.search(query, 3)
-        if not hits:
-            return "没有找到合适的表情包"
-        best = hits[0]
-        path = ctx.stickers.resolve(best["file"])
-        if path is None:
-            return "表情包文件无效"
+    async def _send_image(path, sub_type: str | None) -> bool:
+        data: dict = {"file": str(path)}
+        if sub_type:
+            data["sub_type"] = str(sub_type)
         try:
             await ctx.api.call(
                 "send_private_msg",
                 user_id=ctx.settings.owner_qq,
-                message=[{"type": "image", "data": {"file": str(path)}}],
+                message=[{"type": "image", "data": data}],
             )
+            return True
         except Exception:
-            return "表情包发送失败"
-        return f"已发送表情包：{best['key']}"
+            log.warning("表情包发送失败", exc_info=True)
+            return False
+
+    async def send_sticker(query: str) -> str:
+        kit = getattr(ctx, "sticker_kit", None)
+        if kit is not None:
+            for hit in kit.search(query, 3):
+                path = await kit.ensure_file(hit)
+                if path is None:
+                    continue
+                if await _send_image(path, ctx.settings.sticker_sub_type):
+                    return f"已发送表情包：{hit['name']}（{hit['emotion']}）"
+
+        if ctx.stickers is not None:
+            for hit in await ctx.stickers.search(query, 3):
+                path = ctx.stickers.resolve(hit["file"])
+                if path is None:
+                    continue
+                if await _send_image(path, None):
+                    return f"已发送表情包：{hit['key']}"
+
+        return "没有找到合适的表情包"
 
     async def look_at_image(sha256: str, question: str) -> str:
         if ctx.vision is None or ctx.images is None:

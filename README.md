@@ -176,6 +176,16 @@ stop.vbs            无窗口停止入口
 login.html          自动刷新的扫码页
 ```
 
+## 表情包来源
+
+内置 `nekowhale` 表情包知识库（大肥鱼 / GPT娘，322 张，逐张标注情绪与场景）：
+
+- 仓库：[Loping151/dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers)
+- 作者：可以叫我云大人（[B 站](https://space.bilibili.com/103739)），[kiriyuki.com](https://kiriyuki.com) 制作
+- 许可：代码 Apache-2.0，知识库数据 CC BY-NC 4.0（**仅限非商业使用**）
+
+详见 [NOTICE](NOTICE)。图片按需从 kiriyuki.com 下载到 `data/stickers/nekowhale/` 缓存。
+
 ## 扩展
 
 加功能的标准流程、接口示例、scope 约定见 [docs/EXTENDING.md](docs/EXTENDING.md)。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 
 
 def split_reply(
@@ -19,6 +20,13 @@ def split_reply(
     parts = [p.strip() for p in text.split(delimiter) if p.strip()]
     if not parts:
         parts = [text]
+
+    # 模型没按 ||| 输出时，按句末标点切一两句，模拟连发
+    if len(parts) == 1 and max_segments > 1:
+        sentences = [s.strip() for s in re.split(r"(?<=[。！？!?])", parts[0]) if s.strip()]
+        sentences = [s for s in sentences if len(s) >= 8]
+        if 1 < len(sentences) <= max_segments:
+            parts = sentences
 
     # 太短的段并入前一段，避免「嗯」「好」单独刷屏
     merged: list[str] = []

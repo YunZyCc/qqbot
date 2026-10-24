@@ -16,6 +16,7 @@ from .memory.embedding import NullEmbedding, OpenAICompatibleEmbedding
 from .memory.emotion import EmotionTracker
 from .memory.hybrid import HybridRetriever
 from .memory.self_memory import SelfMemory
+from .memory.sticker_kit import StickerKit
 from .memory.stickers import StickerLibrary
 from .memory.store import Store
 from .memory.vector import NumpyVectorIndex
@@ -62,6 +63,8 @@ class AppContext:
     retriever: object | None = None
     vision: object | None = None
     stickers: object | None = None
+    sticker_kit: object | None = None
+    images: object | None = None
     emotion: object | None = None
     last_user_at: float = 0.0
     modules: list = field(default_factory=list)
@@ -155,6 +158,12 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     except Exception:
         log.exception("构建表情包索引失败")
 
+    if settings.nekowhale_enabled:
+        ctx.sticker_kit = StickerKit(settings)
+        ctx.sticker_kit.load()
+    else:
+        ctx.sticker_kit = None
+
     ctx.runtime = SimpleRuntime(
         ctx.llm,
         tools,
@@ -180,6 +189,8 @@ async def build_context(settings: Settings | None = None) -> AppContext:
 async def shutdown(ctx: AppContext) -> None:
     if ctx.scheduler is not None:
         ctx.scheduler.shutdown()
+    if ctx.sticker_kit is not None:
+        await ctx.sticker_kit.close()
     if ctx.vision is not None:
         await ctx.vision.close()
     if ctx.embedder is not None:

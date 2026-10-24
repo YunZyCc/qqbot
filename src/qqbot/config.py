@@ -88,9 +88,20 @@ class Settings(BaseSettings):
     # 表情包
     sticker_enabled: bool = True
     sticker_dir: Path = Path("data/stickers")
-    sticker_auto_rate: float = 0.15
+    sticker_auto_rate: float = 0.3
     sticker_min_score: float = 0.6
     sticker_max_size_kb: int = 2048
+    sticker_sub_type: str = "1"
+    # nekowhale 表情包知识库
+    nekowhale_enabled: bool = True
+    nekowhale_meta: Path = Path("meta/nekowhale.json")
+    nekowhale_site: str = "https://kiriyuki.com"
+    nekowhale_gif_base: str = "/media/gif"
+    nekowhale_packs: str = "大肥鱼,大肥鱼和GPT娘"
+
+    @property
+    def nekowhale_pack_list(self) -> list[str]:
+        return [p.strip() for p in self.nekowhale_packs.split(",") if p.strip()]
 
     # 视觉理解
     vision_enabled: bool = True

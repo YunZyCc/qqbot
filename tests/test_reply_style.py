@@ -23,6 +23,12 @@ def test_single_reply_without_delimiter():
     assert split_reply("就一句话", 3, 500) == ["就一句话"]
 
 
+def test_fallback_splits_sentences():
+    parts = split_reply("行吧，你开心就好。要不要再来一张看看？", 3, 500)
+    assert len(parts) == 2
+    assert parts[0].endswith("。")
+
+
 def test_delay_ranges():
     settings = SimpleNamespace(
         reply_delay_min=0.5,
