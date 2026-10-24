@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     reply_segments_max: int = 3
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
-    reply_delay_max: float = 3.0
+    reply_delay_max: float = 1.0
     segment_interval_min: float = 1.0
     segment_interval_max: float = 2.0
 
