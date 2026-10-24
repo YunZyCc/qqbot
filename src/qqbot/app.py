@@ -8,7 +8,12 @@ from .capabilities.builtin import register_builtin_actions
 from .capabilities.registry import ActionRegistry
 from .config import Settings, get_settings
 from .core.bus import EventBus
-from .core.session import OwnerOnlyPolicy, SessionPolicy, SessionRegistry
+from .core.session import (
+    OwnerAndGroupPolicy,
+    OwnerOnlyPolicy,
+    SessionPolicy,
+    SessionRegistry,
+)
 from .llm.client import ChatClient
 from .media import ImageCache
 from .memory.contacts import ContactStore
@@ -72,6 +77,19 @@ class AppContext:
     modules: list = field(default_factory=list)
 
 
+def build_policy(settings: Settings) -> SessionPolicy:
+    """群聊关掉时退回纯私聊策略，行为和以前完全一致。"""
+    if not settings.group_enabled:
+        log.info("群聊未启用，只回应主人私聊")
+        return OwnerOnlyPolicy(settings.owner_qq)
+    groups = settings.group_whitelist_ids
+    if not groups:
+        log.warning("群聊已启用但白名单为空，收到群消息只打日志不回复")
+    else:
+        log.info("群聊已启用，白名单群：%s", "、".join(str(g) for g in groups))
+    return OwnerAndGroupPolicy(settings.owner_qq, settings.bot_qq, groups)
+
+
 async def build_embedding(settings: Settings):
     """探测 embedding 服务；不可用时返回 NullEmbedding，聊天照常。"""
     if not settings.memory_vector_enabled:
@@ -117,7 +135,7 @@ async def build_context(settings: Settings | None = None) -> AppContext:
         api=OneBotAPI(),
         llm=ChatClient(),
         bus=EventBus(),
-        policy=OwnerOnlyPolicy(settings.owner_qq),
+        policy=build_policy(settings),
         sessions=SessionRegistry(),
     )
 

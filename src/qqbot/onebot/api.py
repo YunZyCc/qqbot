@@ -35,6 +35,9 @@ class OneBotAPI:
     async def send_private_msg(self, user_id: int, message: str):
         return await self.call("send_private_msg", user_id=user_id, message=message)
 
+    async def send_group_msg(self, group_id: int, message: str):
+        return await self.call("send_group_msg", group_id=group_id, message=message)
+
     async def get_login_info(self):
         return await self.call("get_login_info")
 

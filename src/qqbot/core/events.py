@@ -20,6 +20,8 @@ class Event:
     segments: list[dict] = field(default_factory=list)
     text: str = ""
     sender_id: int | None = None
+    sender_name: str = ""
+    sender_card: str = ""
     message_type: str = ""
     sub_type: str = ""
     group_id: int | None = None
@@ -61,6 +63,8 @@ def normalize(raw: dict) -> Event | None:
         segments=segments,
         text=extract_text(ev.message),
         sender_id=ev.user_id,
+        sender_name=(ev.sender.nickname or "").strip(),
+        sender_card=(ev.sender.card or "").strip(),
         message_type=ev.message_type,
         sub_type=ev.sub_type,
         group_id=ev.group_id,

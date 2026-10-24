@@ -145,6 +145,17 @@ CREATE TABLE IF NOT EXISTS settings (
     v TEXT NOT NULL
 );
 
+-- 群成员：按群隔离，记住群里出现过谁；不跨群共享
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id   INTEGER NOT NULL,
+    qq         INTEGER NOT NULL,
+    nickname   TEXT NOT NULL DEFAULT '',
+    card       TEXT NOT NULL DEFAULT '',
+    last_seen  REAL NOT NULL,
+    msg_count  INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY(group_id, qq)
+);
+
 -- 人格成长：候选信号攒够证据才升级成 active，单独存在，绝不回写 persona.md
 CREATE TABLE IF NOT EXISTS persona_traits (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -261,7 +272,8 @@ class Store:
         # v6：facts.source 从 'extract' 细分成 fact / focus
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
-        await self.set_setting("schema_version", "6")
+        # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
+        await self.set_setting("schema_version", "7")
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -739,6 +751,32 @@ class Store:
         )
         await self.db.commit()
         return cur.rowcount
+
+    # ---------- 群成员 ----------
+    async def touch_group_member(
+        self, group_id: int, qq: int, nickname: str = "", card: str = ""
+    ) -> None:
+        """记一次群成员露面：新人插入，老人累加消息数并更新时间。"""
+        now = time.time()
+        await self.db.execute(
+            "INSERT INTO group_members(group_id, qq, nickname, card, last_seen, msg_count)"
+            " VALUES(?,?,?,?,?,1)"
+            " ON CONFLICT(group_id, qq) DO UPDATE SET"
+            "   nickname=CASE WHEN excluded.nickname<>'' THEN excluded.nickname ELSE group_members.nickname END,"
+            "   card=CASE WHEN excluded.card<>'' THEN excluded.card ELSE group_members.card END,"
+            "   last_seen=excluded.last_seen,"
+            "   msg_count=group_members.msg_count + 1",
+            (group_id, qq, nickname, card, now),
+        )
+        await self.db.commit()
+
+    async def list_group_members(self, group_id: int, limit: int = 20) -> list[dict]:
+        cur = await self.db.execute(
+            "SELECT * FROM group_members WHERE group_id=?"
+            " ORDER BY msg_count DESC, last_seen DESC LIMIT ?",
+            (group_id, limit),
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
     # ---------- settings ----------
     async def get_setting(self, key: str, default: str = "") -> str:

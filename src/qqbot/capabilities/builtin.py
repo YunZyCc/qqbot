@@ -11,6 +11,16 @@ class SendTextParams(BaseModel):
     text: str
 
 
+class SendGroupTextParams(BaseModel):
+    group_id: int
+    text: str
+
+
+class SendGroupSegmentsParams(BaseModel):
+    group_id: int
+    segments: list[dict]
+
+
 class SendSegmentsParams(BaseModel):
     user_id: int
     segments: list[dict]
@@ -65,6 +75,12 @@ def register_builtin_actions(registry: ActionRegistry, ctx) -> None:
     async def send_voice(user_id: int, file: str):
         return await api.call("send_private_msg", user_id=user_id, message=[seg_record(file)])
 
+    async def send_group_text(group_id: int, text: str):
+        return await api.call("send_group_msg", group_id=group_id, message=[seg_text(text)])
+
+    async def send_group_segments(group_id: int, segments: list[dict]):
+        return await api.call("send_group_msg", group_id=group_id, message=build(segments))
+
     async def set_signature(text: str):
         return await api.set_self_longnick(text)
 
@@ -87,6 +103,17 @@ def register_builtin_actions(registry: ActionRegistry, ctx) -> None:
         Action("send_mface", "给指定 QQ 发收藏表情包", SendMfaceParams, send_mface)
     )
     registry.register(Action("send_voice", "给指定 QQ 发语音", SendVoiceParams, send_voice))
+    registry.register(
+        Action("send_group_text", "往指定群发一条文字消息", SendGroupTextParams, send_group_text)
+    )
+    registry.register(
+        Action(
+            "send_group_segments",
+            "往指定群发消息段数组",
+            SendGroupSegmentsParams,
+            send_group_segments,
+        )
+    )
     registry.register(
         Action("set_signature", "修改机器人个性签名", SignatureParams, set_signature)
     )

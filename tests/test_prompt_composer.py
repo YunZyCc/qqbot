@@ -9,6 +9,7 @@ def test_section_order():
     composer = build_default_composer()
     assert composer.sections() == [
         "persona",
+        "chatroom",
         "evolution",
         "time",
         "self",

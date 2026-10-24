@@ -85,15 +85,31 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
         return f"记住了：{predicate} {object}"
 
     async def _send_image(path, sub_type: str | None) -> bool:
+        """按当前 scope 决定发私聊还是发群。"""
         data: dict = {"file": str(path)}
         if sub_type:
             data["sub_type"] = str(sub_type)
+        scope = current_scope.get() or f"private:{ctx.settings.owner_qq}"
         try:
-            await ctx.api.call(
-                "send_private_msg",
-                user_id=ctx.settings.owner_qq,
-                message=[{"type": "image", "data": data}],
-            )
+            if scope.startswith("group:"):
+                group_id = int(scope.split(":", 1)[1])
+                await ctx.api.call(
+                    "send_group_msg",
+                    group_id=group_id,
+                    message=[{"type": "image", "data": data}],
+                )
+            else:
+                user_id = ctx.settings.owner_qq
+                if scope.startswith("private:"):
+                    try:
+                        user_id = int(scope.split(":", 1)[1])
+                    except ValueError:
+                        user_id = ctx.settings.owner_qq
+                await ctx.api.call(
+                    "send_private_msg",
+                    user_id=user_id,
+                    message=[{"type": "image", "data": data}],
+                )
             return True
         except Exception:
             log.warning("表情包发送失败", exc_info=True)

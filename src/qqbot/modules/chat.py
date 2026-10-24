@@ -11,6 +11,7 @@ from ..core.events import Event, EventKind
 from ..core.message import image_segments, to_user_text
 from ..core.reply_style import reply_delay, segment_interval, split_reply
 from ..core.session import SessionContext, session_from_event
+from ..memory.context import current_scope
 from ..memory.episodes import maybe_create_episode
 from ..memory.facts import extract_facts, has_signal
 from ..memory.growth import active_traits, collect_signals
@@ -35,6 +36,10 @@ class ChatModule:
 
     async def handle(self, ev: Event) -> None:
         ctx = self.ctx
+        if ev.is_group:
+            await self._handle_group(ev)
+            return
+
         if not await ctx.policy.should_respond(ev):
             if ev.kind is EventKind.MESSAGE:
                 log.info("忽略消息 sender=%s type=%s", ev.sender_id, ev.message_type)
@@ -57,6 +62,90 @@ class ChatModule:
         sctx = ctx.sessions.get(key)
         async with sctx.lock:
             await self._reply(ev, sctx, user_text)
+
+    # ---------- 群聊 ----------
+
+    async def _handle_group(self, ev: Event) -> None:
+        """群消息：先记录，再决定回不回。记录是必须的，她得知道群里聊过什么。"""
+        ctx = self.ctx
+        gid = ev.group_id
+        if not gid:
+            return
+        if not ctx.policy.group_allowed(gid):
+            log.info("群消息 group=%s 不在白名单，已忽略", gid)
+            return
+
+        scope = f"group:{gid}"
+        user_text = ev.text or to_user_text(ev.segments)
+        image_parts = await self._describe_images(ev, scope)
+        if image_parts:
+            user_text = (user_text + "".join(image_parts)).strip()
+        if not user_text:
+            return
+
+        await ctx.store.touch_group_member(
+            gid, ev.sender_id or 0, ev.sender_name, ev.sender_card
+        )
+        speaker = ev.sender_card or ev.sender_name or str(ev.sender_id or "")
+        stored = f"{speaker}：{user_text}" if speaker else user_text
+        await ctx.store.add_message(
+            scope, ev.sender_id or 0, "user", stored, ev.message_id, source="group"
+        )
+
+        ctx.last_user_at = time.time()
+        if not await self._should_reply_in_group(ev, user_text):
+            return
+
+        key = session_from_event(ev)
+        if key is None:
+            return
+        sctx = ctx.sessions.get(key)
+        async with sctx.lock:
+            await self._reply(ev, sctx, user_text, store_user_message=False)
+        await self._open_active_window(gid)
+
+    async def _should_reply_in_group(self, ev: Event, user_text: str) -> bool:
+        """四级触发：@ > 叫名字 > 活跃期 > 概率。"""
+        ctx = self.ctx
+        settings = ctx.settings
+        gid = ev.group_id or 0
+
+        if ctx.policy.is_at_bot(ev):
+            return True
+
+        for name in settings.group_trigger_name_list:
+            if name and name in user_text:
+                return True
+
+        if await self._in_active_window(gid):
+            return True
+
+        if len(user_text.strip()) < settings.group_min_chars:
+            return False
+        if await self._in_cooldown(gid):
+            return False
+        return random.random() < settings.group_reply_chance
+
+    async def _in_active_window(self, gid: int) -> bool:
+        until = float(
+            await self.ctx.store.get_setting(f"group_active_until:{gid}", "0") or 0
+        )
+        return time.time() < until
+
+    async def _in_cooldown(self, gid: int) -> bool:
+        last = float(
+            await self.ctx.store.get_setting(f"group_last_reply:{gid}", "0") or 0
+        )
+        return time.time() - last < self.ctx.settings.group_reply_cooldown
+
+    async def _open_active_window(self, gid: int) -> None:
+        """回过了就继续聊：这段时间内群里说话她都接。"""
+        settings = self.ctx.settings
+        now = time.time()
+        await self.ctx.store.set_setting(
+            f"group_active_until:{gid}", str(now + settings.group_active_minutes * 60)
+        )
+        await self.ctx.store.set_setting(f"group_last_reply:{gid}", str(now))
 
     async def _describe_images(self, ev: Event, scope: str) -> list[str]:
         ctx = self.ctx
@@ -85,21 +174,34 @@ class ChatModule:
                 parts.append("[图片]")
         return parts
 
-    async def _reply(self, ev: Event, sctx: SessionContext, user_text: str) -> None:
+    async def _reply(
+        self,
+        ev: Event,
+        sctx: SessionContext,
+        user_text: str,
+        store_user_message: bool = True,
+    ) -> None:
         ctx = self.ctx
         settings = ctx.settings
         scope = ctx.policy.memory_scope(ev)
         sender = ev.sender_id or settings.owner_qq
 
         log.info("收到消息（scope=%s）：%s", scope, user_text[:50])
-        await ctx.store.add_message(
-            scope, sender, "user", user_text, ev.message_id, source="user"
-        )
+        if store_user_message:
+            await ctx.store.add_message(
+                scope, sender, "user", user_text, ev.message_id, source="user"
+            )
 
         if ctx.emotion is not None:
             await ctx.emotion.on_user_message(user_text)
 
-        history = await ctx.store.recent_messages(scope, settings.max_context_messages)
+        # 群消息更碎，回放条数比私聊多
+        context_limit = (
+            settings.group_max_context
+            if scope.startswith("group:")
+            else settings.max_context_messages
+        )
+        history = await ctx.store.recent_messages(scope, context_limit)
         messages = await build_reply_messages(ctx, scope, sender, user_text, history)
         reply_text, _ = await ctx.runtime.run(messages, scope=scope)
         reply_text = (reply_text or "").strip() or "……我卡了一下，再说一遍？"
@@ -117,7 +219,10 @@ class ChatModule:
             if index > 0 and settings.reply_delay_enabled:
                 await asyncio.sleep(segment_interval(settings))
             try:
-                await ctx.api.send_private_msg(sender, part)
+                if ev.is_group and ev.group_id:
+                    await ctx.api.send_group_msg(ev.group_id, part)
+                else:
+                    await ctx.api.send_private_msg(sender, part)
             except Exception:
                 log.exception("发送消息失败")
                 break
@@ -128,7 +233,7 @@ class ChatModule:
         sctx.turns += 1
         log.info("已回复 %s 段，共 %s 字", len(parts), len(reply_text))
 
-        await self._maybe_auto_sticker(sender, user_text, reply_text, sctx)
+        await self._maybe_auto_sticker(sender, user_text, reply_text, sctx, scope)
 
         # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -177,7 +282,12 @@ class ChatModule:
             )
 
     async def _maybe_auto_sticker(
-        self, sender: int, user_text: str, reply_text: str, sctx: SessionContext
+        self,
+        sender: int,
+        user_text: str,
+        reply_text: str,
+        sctx: SessionContext,
+        scope: str = "",
     ) -> None:
         """显式要图时必发；否则按概率补一张，带冷却和每日上限。"""
         ctx = self.ctx
@@ -203,7 +313,13 @@ class ChatModule:
             return
 
         query = (reply_text or user_text)[:40]
-        result = await ctx.tools.run("send_sticker", {"query": query})
+        # 工具靠 current_scope 判断发私聊还是发群，这里要显式带上
+        token = current_scope.set(scope) if scope else None
+        try:
+            result = await ctx.tools.run("send_sticker", {"query": query})
+        finally:
+            if token is not None:
+                current_scope.reset(token)
         if result.startswith("已发送"):
             sctx.last_sticker_turn = sctx.turns
             await ctx.store.set_setting(f"sticker_count:{today}", str(count + 1))
@@ -233,6 +349,7 @@ async def build_reply_messages(
     evolution = (
         await active_traits(ctx.store) if settings.growth_enabled else []
     )
+    chatroom = await _build_chatroom(ctx, scope, sender)
 
     rolling = await ctx.store.latest_summary(scope, "rolling")
     session = await ctx.store.latest_summary(scope, "session")
@@ -272,6 +389,7 @@ async def build_reply_messages(
         PromptContext(
             persona=ctx.persona,
             evolution=evolution,
+            chatroom=chatroom,
             summary=summary,
             facts=facts,
             episodes=episodes,
@@ -284,3 +402,34 @@ async def build_reply_messages(
             history=history,
         )
     )
+
+
+async def _build_chatroom(ctx, scope: str, sender: int) -> dict | None:
+    """群聊时组装「当前在哪个群、谁在说话、群里认识谁」；私聊返回 None。"""
+    if not scope.startswith("group:"):
+        return None
+    try:
+        group_id = int(scope.split(":", 1)[1])
+    except (IndexError, ValueError):
+        return None
+
+    settings = ctx.settings
+    members = await ctx.store.list_group_members(group_id, settings.group_member_limit)
+    speaker_name = str(sender)
+    for member in members:
+        if int(member["qq"]) == int(sender):
+            speaker_name = member["card"] or member["nickname"] or str(sender)
+            break
+
+    is_owner = False
+    policy = getattr(ctx, "policy", None)
+    if policy is not None and hasattr(policy, "is_owner"):
+        is_owner = policy.is_owner(sender)
+
+    return {
+        "group_id": group_id,
+        "speaker_qq": sender,
+        "speaker_name": speaker_name,
+        "is_owner": is_owner,
+        "members": members,
+    }

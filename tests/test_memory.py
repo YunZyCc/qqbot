@@ -65,7 +65,7 @@ async def test_migration_from_legacy_db(tmp_path):
     await store.init()
     rows = await store.recent_messages("private:9", 10)
     assert rows[0]["content"] == "旧消息"
-    assert await store.get_setting("schema_version") == "6"
+    assert await store.get_setting("schema_version") == "7"
     await store.close()
 
 

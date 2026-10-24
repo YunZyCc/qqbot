@@ -14,6 +14,47 @@ REPLY_RULES = """输出要求：
 - 对方要表情包、或者你想用表情包回应时，调用 send_sticker 工具直接发，不要只说「给你发一个」。"""
 
 
+def chatroom_section(ctx: PromptContext) -> str:
+    """群聊场景：告诉她这是群、谁在说话、群里认识谁、什么不能说。"""
+    info = ctx.chatroom or {}
+    if not info:
+        return ""
+
+    speaker = info.get("speaker_name") or "有人"
+    speaker_qq = info.get("speaker_qq") or ""
+    is_owner = bool(info.get("is_owner"))
+    group_id = info.get("group_id") or ""
+    identity = "是你的主人" if is_owner else "不是你的主人"
+
+    lines = [
+        "你现在在一个 QQ 群里聊天，群里的人都叫你「大肥鱼」。",
+        f"当前说话的是「{speaker}」（QQ {speaker_qq}），{identity}。",
+        f"群号 {group_id}，群里还有别人在看。",
+    ]
+
+    members = info.get("members") or []
+    others = [
+        m for m in members
+        if int(m.get("qq") or 0) != int(speaker_qq or 0)
+    ]
+    if others:
+        lines.append("")
+        lines.append("你在这个群里还认识这些人：")
+        for member in others:
+            name = member.get("card") or member.get("nickname") or member.get("qq")
+            lines.append(f"- {name}")
+
+    lines.append("")
+    lines.append("群聊规矩：")
+    lines.append("- 只接当前说话的人，别把别人的话当成对你说的。")
+    lines.append("- 你正在跟他们聊着，就接着聊；聊完这阵子再自然停下。")
+    lines.append("- 不要提你和主人私聊里的事，一个字都别提。")
+    lines.append("- 不要提你在别的群、别的私聊里说过什么。")
+    lines.append("- 不确定的就不说，别替别人补充。")
+    lines.append("- 称呼用群名片，别用私聊里的叫法。")
+    return "\n".join(lines)
+
+
 def persona_section(ctx: PromptContext) -> str:
     return ctx.persona
 
@@ -137,6 +178,7 @@ def rules_section(ctx: PromptContext) -> str:
 def build_default_composer() -> PromptComposer:
     composer = PromptComposer()
     composer.register("persona", persona_section)
+    composer.register("chatroom", chatroom_section)
     composer.register("evolution", evolution_section)
     composer.register("time", time_section)
     composer.register("self", self_section)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -34,7 +35,7 @@ class SessionPolicy(Protocol):
 
 
 class OwnerOnlyPolicy:
-    """当前行为：只回应 owner 的私聊，记忆落在 private:<owner>。"""
+    """只回应 owner 的私聊。保留给老配置用；群聊请用 OwnerAndGroupPolicy。"""
 
     def __init__(self, owner_qq: int) -> None:
         self.owner_qq = owner_qq
@@ -48,6 +49,57 @@ class OwnerOnlyPolicy:
 
     def memory_scope(self, ev: Event) -> str:
         return f"private:{self.owner_qq}"
+
+
+class OwnerAndGroupPolicy:
+    """私聊只回应 owner；群聊只接白名单群。
+
+    群的「回不回」细判（@ / 叫名字 / 活跃期 / 概率）放在 chat 层，
+    因为那需要读 store 里的活跃期时间戳。这里只负责身份和 scope。
+    """
+
+    def __init__(
+        self,
+        owner_qq: int,
+        bot_qq: int = 0,
+        groups: Iterable[int] = (),
+    ) -> None:
+        self.owner_qq = owner_qq
+        self.bot_qq = bot_qq
+        self.groups = {int(g) for g in groups if g}
+
+    async def should_respond(self, ev: Event) -> bool:
+        if ev.kind is not EventKind.MESSAGE:
+            return False
+        if ev.message_type == "private":
+            return ev.sender_id == self.owner_qq
+        if ev.message_type == "group":
+            return self.group_allowed(ev.group_id)
+        return False
+
+    def memory_scope(self, ev: Event) -> str:
+        if ev.is_group and ev.group_id:
+            return f"group:{ev.group_id}"
+        return f"private:{ev.sender_id or self.owner_qq}"
+
+    def group_allowed(self, group_id: int | None) -> bool:
+        if not group_id:
+            return False
+        return int(group_id) in self.groups
+
+    def is_at_bot(self, ev: Event) -> bool:
+        if not self.bot_qq:
+            return False
+        for seg in ev.segments or []:
+            if not isinstance(seg, dict) or seg.get("type") != "at":
+                continue
+            data = seg.get("data") or {}
+            if str(data.get("qq", "")) == str(self.bot_qq):
+                return True
+        return False
+
+    def is_owner(self, qq: int | None) -> bool:
+        return bool(qq) and int(qq) == int(self.owner_qq)
 
 
 @dataclass

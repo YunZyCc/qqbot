@@ -92,6 +92,42 @@ class Settings(BaseSettings):
                 items.append(value)
         return items or [45.0, 30.0, 15.0, 7.0, 3.0]
 
+    # 群聊：记录按 group:<群号> 隔离，不跟私聊混
+    group_enabled: bool = True
+    # 逗号分隔的群号白名单；空表示不接任何群（只打日志方便你填）
+    group_whitelist: str = "1083370981"
+    # 群里叫她什么。命中就必回
+    group_trigger_names: str = "大肥鱼"
+    # 没 @ 没叫名字时，插一句的概率
+    group_reply_chance: float = 0.15
+    # 概率回复的最小间隔，防止刷屏
+    group_reply_cooldown: int = 60
+    # 回过话后保持对话的时长，这段时间内群里说话她都会接
+    group_active_minutes: int = 5
+    # 太短的消息不值得接
+    group_min_chars: int = 4
+    # 群聊回放的历史条数（群消息碎，比私聊多）
+    group_max_context: int = 40
+    # prompt 里最多列几个群成员
+    group_member_limit: int = 15
+
+    @property
+    def group_whitelist_ids(self) -> list[int]:
+        ids: list[int] = []
+        for piece in self.group_whitelist.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                ids.append(int(piece))
+            except ValueError:
+                continue
+        return ids
+
+    @property
+    def group_trigger_name_list(self) -> list[str]:
+        return [n.strip() for n in self.group_trigger_names.split(",") if n.strip()]
+
     # 主动开口
     proactive_enabled: bool = True
     proactive_check_minutes: int = 10

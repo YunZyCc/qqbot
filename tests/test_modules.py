@@ -22,13 +22,12 @@ async def test_default_only_chat(tmp_path):
 
 
 async def test_all_modules_load(tmp_path):
-    modules = "chat,diary,group,friends,media,qzone,profile,self_memory"
+    modules = "chat,diary,friends,media,qzone,profile,self_memory"
     ctx = await build_context(_settings(tmp_path, modules))
     names = [m.name for m in ctx.modules]
     assert names == [
         "chat",
         "diary",
-        "group",
         "friends",
         "media",
         "qzone",
