@@ -21,7 +21,7 @@ from .memory.stickers import StickerLibrary
 from .memory.store import Store
 from .memory.vector import NumpyVectorIndex
 from .onebot.api import OneBotAPI
-from .persona.loader import load_persona
+from .persona.loader import load_persona, load_personas
 from .prompt.sections import build_default_composer
 from .runtime.simple import SimpleRuntime
 from .scheduler.scheduler import Scheduler
@@ -66,6 +66,8 @@ class AppContext:
     sticker_kit: object | None = None
     images: object | None = None
     emotion: object | None = None
+    personas: dict = field(default_factory=dict)
+    current_persona: str = ""
     last_user_at: float = 0.0
     modules: list = field(default_factory=list)
 
@@ -108,16 +110,22 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     )
     await store.init()
 
+    personas = load_personas(settings.persona_dir)
+    saved_persona = await store.get_setting("current_persona", "")
+    active_persona = personas.get(saved_persona.lower()) if saved_persona else None
+
     ctx = AppContext(
         settings=settings,
         store=store,
-        persona=load_persona(settings.persona_file),
+        persona=active_persona.text if active_persona else load_persona(settings.persona_file),
         api=OneBotAPI(),
         llm=ChatClient(),
         bus=EventBus(),
         policy=OwnerOnlyPolicy(settings.owner_qq),
         sessions=SessionRegistry(),
     )
+    ctx.personas = personas
+    ctx.current_persona = active_persona.name if active_persona else ""
 
     actions = ActionRegistry()
     tools = ToolRegistry()

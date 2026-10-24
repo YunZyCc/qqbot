@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
     persona_file: Path = Path("src/qqbot/persona/persona.md")
+    persona_dir: Path = Path("src/qqbot/persona/personas")
 
     max_context_messages: int = 30
     summary_every: int = 10
