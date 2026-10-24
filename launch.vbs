@@ -1,4 +1,4 @@
-' 无窗口启动 NapCat + qqbot，未登录时自动打开扫码页
+' Start NapCat and qqbot without a window
 Set fso = CreateObject("Scripting.FileSystemObject")
 base = fso.GetParentFolderName(WScript.ScriptFullName)
 Set ws = CreateObject("WScript.Shell")

@@ -8,7 +8,7 @@ foreach ($procId in $procs) {
     Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
 }
 
-# 兜底：清掉命令行里带 qq-ai-bot 的 python / node
+# Fallback: kill python / node processes whose command line mentions qq-ai-bot.
 Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='node.exe'" |
     Where-Object { $_.CommandLine -match 'qq-ai-bot' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

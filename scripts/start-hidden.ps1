@@ -3,32 +3,37 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $root ".env"))) { throw "missing .env in $root" }
 
+function Test-Port([int]$port) {
+    return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+}
+
 $env:PYTHONPATH = Join-Path $root "src"
 $logDir = Join-Path $root "data"
 New-Item -ItemType Directory -Force $logDir | Out-Null
 
-$napcatBat = Join-Path $root "napcat\napcat.bat"
-$napcatDir = Join-Path $root "napcat"
-Start-Process -FilePath $napcatBat -WorkingDirectory $napcatDir -WindowStyle Hidden
-
-Start-Sleep -Seconds 8
-
-$python = Join-Path $root ".venv\Scripts\python.exe"
-Start-Process -FilePath $python -ArgumentList "-m", "qqbot.main" -WorkingDirectory $root -WindowStyle Hidden
-
-# 最多等 15 秒看是否登录成功（3000 端口起来即已登录）
-$loggedIn = $false
-for ($i = 0; $i -lt 15; $i++) {
-    Start-Sleep -Seconds 1
-    if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) {
-        $loggedIn = $true
-        break
-    }
+# Start NapCat if not already running.
+if (-not (Test-Port 6099)) {
+    Start-Process -FilePath (Join-Path $root "napcat\napcat.bat") `
+        -WorkingDirectory (Join-Path $root "napcat") -WindowStyle Hidden
+    Start-Sleep -Seconds 6
 }
 
-if (-not $loggedIn) {
-    Start-Process (Join-Path $root "login.html")
-    Write-Host "not logged in, opened login.html"
+# Start qqbot if not already running.
+if (-not (Test-Port 8080)) {
+    Start-Process -FilePath (Join-Path $root ".venv\Scripts\python.exe") `
+        -ArgumentList "-m", "qqbot.main" -WorkingDirectory $root -WindowStyle Hidden
+    Start-Sleep -Seconds 3
+}
+
+# Port 3000 opens only after NapCat logs in.
+if (-not (Test-Port 3000)) {
+    $login = Join-Path $root "login.html"
+    if (Test-Path $login) {
+        Start-Process $login
+        Write-Host "not logged in, opened login page: $login"
+    } else {
+        Write-Host "not logged in. Start napcat manually and scan the QR code."
+    }
 } else {
-    Write-Host "already logged in"
+    Write-Host "qqbot is running and logged in"
 }
