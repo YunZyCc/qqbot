@@ -13,6 +13,7 @@
   - 结构化事实抽取（每 6 轮异步写入 SQLite）
   - 时间衰减检索（FTS 类字符匹配 + 半衰期 21 天，高置信事实不衰减）
 - **长回复分片**：按 500 字 / 句末标点切分，不刷屏。
+- **可扩展底座**：事件总线 + 模块注册 + 动作/工具注册 + 记忆 scope，加功能不用改核心（见 [扩展指南](docs/EXTENDING.md)）。
 - **完全隐藏运行**：启动无终端窗口，未登录时自动打开浏览器扫码页。
 - **零外部服务**：SQLite 单文件，不需要向量数据库。
 
@@ -25,13 +26,23 @@ NapCat（OneBot 11 协议端，登录小号）
    ├── 反向 WebSocket ──▶ qqbot FastAPI (:8080)   收事件
    └── HTTP API ◀──────── qqbot                   发消息
                               │
-                        事件路由 → 白名单 → 拼 prompt
+                    core/bus 事件分发（message / notice / request / meta）
                               │
-                        DeepSeek / OpenAI 兼容 API
+                    modules/*（chat 默认启用，其余按需）
                               │
-                        分片 → send_private_msg
+              prompt/composer 拼 system
+                 ├─ persona
+                 ├─ self_state（bot:self）
+                 ├─ facts（user:<qq>）
+                 ├─ relations（social:global）
+                 ├─ summary（session scope）
+                 └─ rules
                               │
-                        异步写 SQLite（摘要 / 事实）
+                    runtime/simple（LLM + 工具循环）
+                              │
+                    分片 → send_private_msg
+                              │
+                    异步写 SQLite（摘要 / 事实 / 联系人 / 关系）
 ```
 
 ## 环境要求
@@ -112,6 +123,10 @@ Unregister-ScheduledTask -TaskName qqbot-autostart -Confirm:$false
 | `ONEBOT_WS_PATH` | 反向 WS 路径 | `/onebot/v11/ws` |
 | `HOST` / `PORT` | 本服务监听地址 | `127.0.0.1:8080` |
 | `DAILY_TOKEN_BUDGET` | 每日 token 上限 | `200000` |
+| `ENABLED_MODULES` | 启用的模块，逗号分隔 | `chat` |
+| `TOOLS_ENABLED` | 是否把工具暴露给模型 | `false` |
+| `TOOL_MAX_ROUNDS` | 工具调用最大轮数 | `4` |
+| `MCP_SERVERS` | MCP server 配置（JSON 数组） | 空 |
 
 > 完整配置见 `src/qqbot/config.py`。
 
@@ -120,18 +135,35 @@ Unregister-ScheduledTask -TaskName qqbot-autostart -Confirm:$false
 ```
 src/qqbot/
   main.py           入口（FastAPI + 反向 WS）
+  app.py            AppContext 组装与模块加载
   config.py         配置
-  onebot/           事件解析、NapCat API 封装
-  core/             路由、白名单、消息分片
-  llm/              OpenAI 兼容客户端、prompt 拼装
-  memory/           SQLite 存储、摘要、事实抽取、检索
+  core/             事件、消息段、总线、会话、分片
+  onebot/           NapCat API 封装、WS
+  capabilities/     平台动作注册表（发消息/表情/语音/签名/说说/好友）
+  tools/            模型工具注册表 + MCP 骨架
+  runtime/          AgentRuntime 协议 + SimpleRuntime
+  prompt/           PromptComposer + sections
+  memory/           SQLite 存储、scope、联系人、关系、自我记忆
+  modules/          功能模块（chat/qzone/profile/friends/group/media/self_memory）
+  scheduler/        APScheduler 封装
   persona/          persona.md 与人设加载
+docs/EXTENDING.md   扩展指南
 tests/              单元测试（pytest）
 scripts/            启动 / 停止 / 安装自启
 launch.vbs          无窗口启动入口
 stop.vbs            无窗口停止入口
 login.html          自动刷新的扫码页
 ```
+
+## 扩展
+
+加功能的标准流程、接口示例、scope 约定见 [docs/EXTENDING.md](docs/EXTENDING.md)。
+
+简单说：
+
+1. 写 `src/qqbot/modules/xxx.py`，实现 `setup(ctx)`；
+2. 在 `modules/__init__.py` 的 `MODULES` 里加一行；
+3. `.env` 里 `ENABLED_MODULES=chat,xxx`。
 
 ## 调试
 
