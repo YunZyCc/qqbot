@@ -81,6 +81,38 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     expires_at   REAL
 );
 
+CREATE TABLE IF NOT EXISTS episodes (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope    TEXT NOT NULL DEFAULT '',
+    start_ts REAL NOT NULL,
+    end_ts   REAL NOT NULL,
+    text     TEXT NOT NULL,
+    people   TEXT NOT NULL DEFAULT '',
+    ts       REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS diaries (
+    date             TEXT PRIMARY KEY,
+    scope            TEXT NOT NULL DEFAULT 'bot:self',
+    text             TEXT NOT NULL,
+    mood             TEXT NOT NULL DEFAULT '',
+    highlights       TEXT NOT NULL DEFAULT '',
+    source_msg_count INTEGER NOT NULL DEFAULT 0,
+    created_at       REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope      TEXT NOT NULL,
+    ref_type   TEXT NOT NULL,
+    ref_id     INTEGER NOT NULL,
+    model      TEXT NOT NULL,
+    dim        INTEGER NOT NULL,
+    vector     BLOB NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE(scope, ref_type, ref_id, model)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
@@ -96,6 +128,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_unique
     ON facts(scope, subject, predicate) WHERE status='active';
 CREATE INDEX IF NOT EXISTS idx_relations_a ON relations(a_qq);
 CREATE INDEX IF NOT EXISTS idx_relations_b ON relations(b_qq);
+CREATE INDEX IF NOT EXISTS idx_episodes_scope_ts ON episodes(scope, ts);
+CREATE INDEX IF NOT EXISTS idx_diaries_scope ON diaries(scope, date);
+CREATE INDEX IF NOT EXISTS idx_embeddings_scope ON embeddings(scope, ref_type);
 """
 
 
@@ -151,7 +186,14 @@ class Store:
                     f"UPDATE {table} SET scope=? WHERE scope=''", (self.default_scope,)
                 )
 
-        await self.set_setting("schema_version", "3")
+        await self._ensure_column(
+            "summaries", "type", "type TEXT NOT NULL DEFAULT 'session'"
+        )
+        await self._ensure_column(
+            "facts", "source", "source TEXT NOT NULL DEFAULT 'extract'"
+        )
+
+        await self.set_setting("schema_version", "4")
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -187,6 +229,23 @@ class Store:
         )
         return [dict(r) for r in await cur.fetchall()]
 
+    async def messages_between(
+        self, start_ts: float, end_ts: float, scope: str | None = None
+    ) -> list[dict]:
+        if scope:
+            cur = await self.db.execute(
+                "SELECT scope, sender_id, role, content, ts FROM messages"
+                " WHERE ts>=? AND ts<? AND scope=? ORDER BY id",
+                (start_ts, end_ts, scope),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT scope, sender_id, role, content, ts FROM messages"
+                " WHERE ts>=? AND ts<? ORDER BY id",
+                (start_ts, end_ts),
+            )
+        return [dict(r) for r in await cur.fetchall()]
+
     async def count_messages(self, scope: str) -> int:
         cur = await self.db.execute(
             "SELECT COUNT(*) AS n FROM messages WHERE scope=?", (scope,)
@@ -194,20 +253,32 @@ class Store:
         return int((await cur.fetchone())["n"])
 
     # ---------- summaries ----------
-    async def latest_summary(self, scope: str) -> dict | None:
-        cur = await self.db.execute(
-            "SELECT * FROM summaries WHERE scope=? ORDER BY id DESC LIMIT 1", (scope,)
-        )
+    async def latest_summary(self, scope: str, kind: str | None = None) -> dict | None:
+        if kind:
+            cur = await self.db.execute(
+                "SELECT * FROM summaries WHERE scope=? AND type=? ORDER BY id DESC LIMIT 1",
+                (scope, kind),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM summaries WHERE scope=? ORDER BY id DESC LIMIT 1", (scope,)
+            )
         row = await cur.fetchone()
         return dict(row) if row else None
 
     async def add_summary(
-        self, scope: str, start_ts: float, end_ts: float, text: str, version: int
+        self,
+        scope: str,
+        start_ts: float,
+        end_ts: float,
+        text: str,
+        version: int,
+        kind: str = "session",
     ) -> None:
         await self.db.execute(
-            "INSERT INTO summaries(scope, start_ts, end_ts, text, version, ts)"
-            " VALUES(?,?,?,?,?,?)",
-            (scope, start_ts, end_ts, text, version, time.time()),
+            "INSERT INTO summaries(scope, start_ts, end_ts, text, version, type, ts)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (scope, start_ts, end_ts, text, version, kind, time.time()),
         )
         await self.db.commit()
 
@@ -226,35 +297,69 @@ class Store:
         obj: str,
         confidence: float,
         source_msg_id: int | None = None,
-    ) -> None:
+    ) -> int:
+        """写入或更新事实，返回最终生效的 fact id（被忽略时返回旧 id 或 0）。"""
         now = time.time()
+        new_status = "active" if confidence >= 0.6 else "pending"
         cur = await self.db.execute(
-            "SELECT id, object FROM facts"
-            " WHERE scope=? AND subject=? AND predicate=? AND status='active'",
+            "SELECT id, object, status FROM facts"
+            " WHERE scope=? AND subject=? AND predicate=?"
+            " AND status IN ('active','pending')",
             (scope, subject, predicate),
         )
         row = await cur.fetchone()
+        fact_id = 0
         if row is None:
-            await self.db.execute(
+            insert_cur = await self.db.execute(
                 "INSERT INTO facts(scope, subject, predicate, object, confidence,"
-                " source_msg_id, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-                (scope, subject, predicate, obj, confidence, source_msg_id, now, now),
+                " status, source_msg_id, created_at, updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    scope,
+                    subject,
+                    predicate,
+                    obj,
+                    confidence,
+                    new_status,
+                    source_msg_id,
+                    now,
+                    now,
+                ),
             )
+            fact_id = int(insert_cur.lastrowid or 0)
         elif row["object"].strip() == obj.strip():
             await self.db.execute(
-                "UPDATE facts SET confidence=?, updated_at=? WHERE id=?",
-                (confidence, now, row["id"]),
+                "UPDATE facts SET confidence=?, status=?, updated_at=? WHERE id=?",
+                (confidence, new_status, now, row["id"]),
             )
+            fact_id = int(row["id"])
+        elif confidence < 0.6 and row["status"] == "active":
+            # 低置信度不覆盖已有高置信事实
+            await self.db.commit()
+            return int(row["id"])
         else:
             await self.db.execute(
                 "UPDATE facts SET status='superseded', updated_at=? WHERE id=?", (now, row["id"])
             )
-            await self.db.execute(
+            insert_cur = await self.db.execute(
                 "INSERT INTO facts(scope, subject, predicate, object, confidence,"
-                " source_msg_id, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-                (scope, subject, predicate, obj, confidence, source_msg_id, now, now),
+                " status, source_msg_id, created_at, updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    scope,
+                    subject,
+                    predicate,
+                    obj,
+                    confidence,
+                    new_status,
+                    source_msg_id,
+                    now,
+                    now,
+                ),
             )
+            fact_id = int(insert_cur.lastrowid or 0)
         await self.db.commit()
+        return fact_id
 
     async def forget_fact(self, scope: str, fact_id: int) -> None:
         await self.db.execute(
@@ -296,6 +401,102 @@ class Store:
     async def forget(self, scope: str, item_id: int) -> None:
         await self.forget_fact(scope, item_id)
 
+    # ---------- episodes ----------
+    async def add_episode(
+        self, scope: str, start_ts: float, end_ts: float, text: str, people: str = ""
+    ) -> int:
+        cur = await self.db.execute(
+            "INSERT INTO episodes(scope, start_ts, end_ts, text, people, ts)"
+            " VALUES(?,?,?,?,?,?)",
+            (scope, start_ts, end_ts, text, people, time.time()),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid or 0)
+
+    async def latest_episode_end(self, scope: str) -> float:
+        cur = await self.db.execute(
+            "SELECT end_ts FROM episodes WHERE scope=? ORDER BY id DESC LIMIT 1", (scope,)
+        )
+        row = await cur.fetchone()
+        return float(row["end_ts"]) if row else 0.0
+
+    async def recent_episodes(self, scope: str, limit: int = 5) -> list[dict]:
+        cur = await self.db.execute(
+            "SELECT * FROM episodes WHERE scope=? ORDER BY id DESC LIMIT ?", (scope, limit)
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    # ---------- diaries ----------
+    async def get_diary(self, date: str) -> dict | None:
+        cur = await self.db.execute("SELECT * FROM diaries WHERE date=?", (date,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def upsert_diary(
+        self,
+        date: str,
+        text: str,
+        mood: str = "",
+        highlights: str = "",
+        source_msg_count: int = 0,
+        scope: str = "bot:self",
+    ) -> None:
+        await self.db.execute(
+            "INSERT INTO diaries(date, scope, text, mood, highlights, source_msg_count,"
+            " created_at) VALUES(?,?,?,?,?,?,?)"
+            " ON CONFLICT(date) DO UPDATE SET scope=excluded.scope, text=excluded.text,"
+            " mood=excluded.mood, highlights=excluded.highlights,"
+            " source_msg_count=excluded.source_msg_count, created_at=excluded.created_at",
+            (date, scope, text, mood, highlights, source_msg_count, time.time()),
+        )
+        await self.db.commit()
+
+    async def recent_diaries(self, limit: int = 3, before: str | None = None) -> list[dict]:
+        if before:
+            cur = await self.db.execute(
+                "SELECT * FROM diaries WHERE date < ? ORDER BY date DESC LIMIT ?",
+                (before, limit),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM diaries ORDER BY date DESC LIMIT ?", (limit,)
+            )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    async def diary_dates_since(self, since: str) -> set[str]:
+        cur = await self.db.execute("SELECT date FROM diaries WHERE date >= ?", (since,))
+        return {row["date"] for row in await cur.fetchall()}
+
+    # ---------- embeddings ----------
+    async def upsert_embedding(
+        self, scope: str, ref_type: str, ref_id: int, model: str, dim: int, vector: bytes
+    ) -> None:
+        await self.db.execute(
+            "INSERT INTO embeddings(scope, ref_type, ref_id, model, dim, vector, created_at)"
+            " VALUES(?,?,?,?,?,?,?)"
+            " ON CONFLICT(scope, ref_type, ref_id, model) DO UPDATE SET"
+            " dim=excluded.dim, vector=excluded.vector, created_at=excluded.created_at",
+            (scope, ref_type, ref_id, model, dim, vector, time.time()),
+        )
+        await self.db.commit()
+
+    async def load_embeddings(self, scope: str, ref_type: str, model: str) -> list[dict]:
+        cur = await self.db.execute(
+            "SELECT ref_id, vector FROM embeddings"
+            " WHERE scope=? AND ref_type=? AND model=?",
+            (scope, ref_type, model),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def delete_embeddings(self, scope: str, ref_type: str, model: str) -> None:
+        await self.db.execute(
+            "DELETE FROM embeddings WHERE scope=? AND ref_type=? AND model=?",
+            (scope, ref_type, model),
+        )
+        await self.db.commit()
+
     # ---------- settings ----------
     async def get_setting(self, key: str, default: str = "") -> str:
         cur = await self.db.execute("SELECT v FROM settings WHERE k=?", (key,))
@@ -308,3 +509,24 @@ class Store:
             (key, value),
         )
         await self.db.commit()
+
+    async def incr_counter(self, key: str, n: int = 1) -> int:
+        cur = await self.db.execute("SELECT v FROM settings WHERE k=?", (key,))
+        row = await cur.fetchone()
+        try:
+            value = int(row["v"]) if row else 0
+        except (TypeError, ValueError):
+            value = 0
+        value += n
+        await self.set_setting(key, str(value))
+        return value
+
+    async def counter(self, key: str) -> int:
+        cur = await self.db.execute("SELECT v FROM settings WHERE k=?", (key,))
+        row = await cur.fetchone()
+        if row is None:
+            return 0
+        try:
+            return int(row["v"])
+        except (TypeError, ValueError):
+            return 0

@@ -8,7 +8,7 @@ from .store import Store
 
 log = logging.getLogger(__name__)
 
-SUMMARY_PROMPT = """你在维护一段长期对话的记忆摘要。
+SUMMARY_PROMPT = """你在维护一段长期对话的会话摘要。
 要求：
 1. 保留事实：对方说过的重要信息、喜好、经历、承诺、情绪状态。
 2. 保留关系状态：熟络程度、最近的相处氛围、未完成的话题。
@@ -16,15 +16,33 @@ SUMMARY_PROMPT = """你在维护一段长期对话的记忆摘要。
 4. 用第三人称，控制在 400 字以内。
 只输出摘要正文。"""
 
+ROLLING_PROMPT = """把「旧长期印象」和「今天的会话摘要」合并成一段新的长期印象。
+要求：
+- 保留仍然有效的事实和关系状态，淡化一次性的情绪。
+- 不要编造，不要评价。
+- 600 字以内，只输出正文。"""
+
 
 async def maybe_update_summary(
-    store: Store, chat: ChatClient, scope: str, every: int
-) -> None:
-    latest = await store.latest_summary(scope)
+    store: Store,
+    chat: ChatClient,
+    scope: str,
+    every: int,
+    token_budget: int = 6000,
+) -> bool:
+    """三个触发条件任一满足就更新 session 摘要。"""
+    latest = await store.latest_summary(scope, "session")
     since_ts = float(latest["end_ts"]) if latest else 0.0
     new_msgs = await store.messages_after(scope, since_ts)
-    if len(new_msgs) < every:
-        return
+    if not new_msgs:
+        return False
+
+    chars = sum(len(str(m.get("content") or "")) for m in new_msgs)
+    count_trigger = len(new_msgs) >= every
+    size_trigger = chars >= token_budget
+    daily_trigger = (time.time() - since_ts) >= 86400 and len(new_msgs) >= 3
+    if not (count_trigger or size_trigger or daily_trigger):
+        return False
 
     lines = [f"{m['role']}: {m['content']}" for m in new_msgs]
     previous = latest["text"] if latest else "（无）"
@@ -41,14 +59,52 @@ async def maybe_update_summary(
         )
     except Exception:
         log.exception("生成摘要失败")
-        return
+        return False
 
-    text = text.strip()
+    text = (text or "").strip()
     if not text:
-        return
+        return False
     version = (int(latest["version"]) + 1) if latest else 1
     end_ts = time.time()
     await store.add_summary(
-        scope, start_ts=since_ts, end_ts=end_ts, text=text[:800], version=version
+        scope, start_ts=since_ts, end_ts=end_ts, text=text[:800], version=version,
+        kind="session",
     )
-    log.info("摘要已更新到 v%s（scope=%s，%s 字）", version, scope, len(text))
+    log.info("session 摘要更新到 v%s（scope=%s，%s 字）", version, scope, len(text))
+    return True
+
+
+async def merge_rolling(store: Store, chat: ChatClient, scope: str) -> bool:
+    """把最新 session 摘要合并进 rolling 长期印象（每日跑一次）。"""
+    session = await store.latest_summary(scope, "session")
+    if session is None:
+        return False
+
+    rolling = await store.latest_summary(scope, "rolling")
+    previous = rolling["text"] if rolling else "（无）"
+    user_content = (
+        f"旧长期印象：\n{previous}\n\n今天的会话摘要：\n{session['text']}"
+    )
+    try:
+        text, _ = await chat.complete(
+            [
+                {"role": "system", "content": ROLLING_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=900,
+            temperature=0.3,
+        )
+    except Exception:
+        log.exception("合并 rolling 摘要失败")
+        return False
+
+    text = (text or "").strip()
+    if not text:
+        return False
+    version = (int(rolling["version"]) + 1) if rolling else 1
+    await store.add_summary(
+        scope, start_ts=0.0, end_ts=time.time(), text=text[:900], version=version,
+        kind="rolling",
+    )
+    log.info("rolling 摘要更新到 v%s（scope=%s）", version, scope)
+    return True

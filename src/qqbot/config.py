@@ -33,12 +33,31 @@ class Settings(BaseSettings):
     persona_file: Path = Path("src/qqbot/persona/persona.md")
 
     max_context_messages: int = 30
-    summary_every: int = 20
+    summary_every: int = 10
+    summary_token_budget: int = 6000
     facts_every: int = 6
+    episode_every: int = 20
     retrieve_top_k: int = 5
     reply_max_chars: int = 500
     daily_token_budget: int = 200_000
     request_timeout: float = 60.0
+
+    # 日记
+    diary_enabled: bool = True
+    diary_hour: int = 0
+    diary_minute: int = 10
+    diary_backfill_days: int = 7
+    diary_prompt_days: int = 3
+
+    # 向量记忆
+    memory_vector_enabled: bool = True
+    embedding_base_url: str = "http://127.0.0.1:11434/v1"
+    embedding_api_key: str = "ollama"
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+    embedding_batch: int = 16
+    embedding_concurrency: int = 2
+    embedding_timeout: float = 30.0
 
     # 启用的功能模块，逗号分隔；默认只有 chat
     enabled_modules: str = "chat"

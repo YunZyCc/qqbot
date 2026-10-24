@@ -11,6 +11,7 @@ class PromptContext:
     facts: list[dict] = field(default_factory=list)
     relations: list[dict] = field(default_factory=list)
     self_state: dict = field(default_factory=dict)
+    diary: str = ""
     tools_hint: str = ""
     rules: str = ""
     history: list[dict] = field(default_factory=list)

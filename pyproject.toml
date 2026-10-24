@@ -10,6 +10,7 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "pydantic-settings>=2.4",
     "aiosqlite>=0.20",
+    "numpy>=1.26",
 ]
 
 [dependency-groups]

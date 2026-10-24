@@ -21,8 +21,16 @@ def _relevance(query: str, fact_text: str) -> float:
     f = _grams(fact_text)
     if not f:
         return 0.0
-    hit = len(q & f)
-    return hit / len(q)
+    hit = len(q & f) / len(q)
+    if hit > 0:
+        return hit
+
+    # bigram 无交集时退化为单字匹配（对「猫」这种单字 query 有效），分数打折
+    q1 = set("".join(query.split()))
+    f1 = set("".join(fact_text.split()))
+    if not q1:
+        return 0.0
+    return 0.5 * len(q1 & f1) / len(q1)
 
 
 def score_fact(query: str, fact: dict, now: float | None = None) -> float:

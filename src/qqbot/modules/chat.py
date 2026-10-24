@@ -6,8 +6,8 @@ import logging
 from ..core.events import Event, EventKind
 from ..core.session import SessionContext, session_from_event
 from ..core.splitter import split_message
-from ..memory.facts import extract_facts
-from ..memory.retrieve import retrieve
+from ..memory.episodes import maybe_create_episode
+from ..memory.facts import extract_facts, has_signal
 from ..memory.summary import maybe_update_summary
 from ..prompt.composer import PromptContext
 
@@ -51,15 +51,31 @@ class ChatModule:
         await ctx.store.add_message(scope, sender, "user", ev.text, ev.message_id)
 
         history = await ctx.store.recent_messages(scope, settings.max_context_messages)
-        facts = retrieve(ev.text, await ctx.store.active_facts(scope), settings.retrieve_top_k)
-        summary_row = await ctx.store.latest_summary(scope)
-        summary = summary_row["text"] if summary_row else ""
+        facts = await ctx.retriever.recall(scope, ev.text, settings.retrieve_top_k)
+
+        relations = await ctx.contacts.relations_of(sender)
+        self_state = await ctx.self_memory.get_state()
+
+        rolling = await ctx.store.latest_summary(scope, "rolling")
+        session = await ctx.store.latest_summary(scope, "session")
+        summary_parts = []
+        if rolling:
+            summary_parts.append("长期印象：" + rolling["text"])
+        if session:
+            summary_parts.append("最近：" + session["text"])
+        summary = "\n".join(summary_parts)
+
+        diaries = await ctx.store.recent_diaries(settings.diary_prompt_days)
+        diary_text = "\n\n".join(f"{d['date']}：{d['text'][:200]}" for d in diaries)
 
         messages = ctx.prompt.compose(
             PromptContext(
                 persona=ctx.persona,
                 summary=summary,
                 facts=facts,
+                relations=relations,
+                self_state=self_state,
+                diary=diary_text,
                 history=history,
             )
         )
@@ -78,11 +94,28 @@ class ChatModule:
         sctx.turns += 1
         log.info("已回复 %s 段，共 %s 字", len(parts), len(reply_text))
 
-        if sctx.turns % settings.facts_every == 0:
-            recent = await ctx.store.recent_messages(scope, 12)
+        # 信号词命中立即抽；否则每 N 轮兜底
+        if has_signal(ev.text) or sctx.turns % settings.facts_every == 0:
+            recent = await ctx.store.recent_messages(scope, 8)
             asyncio.create_task(
-                extract_facts(ctx.store, ctx.llm, scope, recent, ev.message_id)
+                extract_facts(
+                    ctx.store,
+                    ctx.llm,
+                    scope,
+                    recent,
+                    ev.message_id,
+                    vector=ctx.vector,
+                )
             )
         asyncio.create_task(
-            maybe_update_summary(ctx.store, ctx.llm, scope, settings.summary_every)
+            maybe_update_summary(
+                ctx.store,
+                ctx.llm,
+                scope,
+                settings.summary_every,
+                settings.summary_token_budget,
+            )
+        )
+        asyncio.create_task(
+            maybe_create_episode(ctx.store, ctx.llm, scope, settings.episode_every)
         )

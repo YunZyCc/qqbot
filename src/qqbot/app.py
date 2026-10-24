@@ -11,8 +11,11 @@ from .core.bus import EventBus
 from .core.session import OwnerOnlyPolicy, SessionPolicy, SessionRegistry
 from .llm.client import ChatClient
 from .memory.contacts import ContactStore
+from .memory.embedding import NullEmbedding, OpenAICompatibleEmbedding
+from .memory.hybrid import HybridRetriever
 from .memory.self_memory import SelfMemory
 from .memory.store import Store
+from .memory.vector import NumpyVectorIndex
 from .onebot.api import OneBotAPI
 from .persona.loader import load_persona
 from .prompt.sections import build_default_composer
@@ -50,7 +53,35 @@ class AppContext:
     contacts: object | None = None
     self_memory: object | None = None
     prompt: object | None = None
+    embedder: object | None = None
+    vector: object | None = None
+    retriever: object | None = None
     modules: list = field(default_factory=list)
+
+
+async def build_embedding(settings: Settings):
+    """探测 embedding 服务；不可用时返回 NullEmbedding，聊天照常。"""
+    if not settings.memory_vector_enabled:
+        log.info("向量记忆未启用")
+        return NullEmbedding()
+
+    provider = OpenAICompatibleEmbedding(
+        base_url=settings.embedding_base_url,
+        api_key=settings.embedding_api_key,
+        model=settings.embedding_model,
+        dim=settings.embedding_dim,
+        timeout=settings.embedding_timeout,
+    )
+    try:
+        vectors = await provider.embed(["ping"])
+        if vectors and len(vectors[0]) == settings.embedding_dim:
+            log.info("embedding 服务可用：%s（%s 维）", settings.embedding_model, settings.embedding_dim)
+            return provider
+        log.warning("embedding 返回维度不符，降级为纯关键词")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("embedding 探测失败（%s），降级为纯关键词", exc)
+    await provider.close()
+    return NullEmbedding()
 
 
 async def build_context(settings: Settings | None = None) -> AppContext:
@@ -90,6 +121,12 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     ctx.prompt = build_default_composer()
     ctx.scheduler = Scheduler()
     ctx.scheduler.start()
+
+    embedder = await build_embedding(settings)
+    ctx.embedder = embedder
+    ctx.vector = NumpyVectorIndex(store, embedder) if not isinstance(embedder, NullEmbedding) else None
+    ctx.retriever = HybridRetriever(store, ctx.vector)
+
     ctx.runtime = SimpleRuntime(
         ctx.llm,
         tools,
@@ -115,6 +152,8 @@ async def build_context(settings: Settings | None = None) -> AppContext:
 async def shutdown(ctx: AppContext) -> None:
     if ctx.scheduler is not None:
         ctx.scheduler.shutdown()
+    if ctx.embedder is not None:
+        await ctx.embedder.close()
     await ctx.api.close()
     await ctx.llm.close()
     await ctx.store.close()

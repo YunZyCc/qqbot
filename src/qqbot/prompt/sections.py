@@ -47,6 +47,12 @@ def relations_section(ctx: PromptContext) -> str:
     return "你记得的人际关系：\n" + "\n".join(lines)
 
 
+def diary_section(ctx: PromptContext) -> str:
+    if not ctx.diary.strip():
+        return ""
+    return "你最近几天的日记：\n" + ctx.diary.strip()
+
+
 def summary_section(ctx: PromptContext) -> str:
     if not ctx.summary.strip():
         return ""
@@ -67,6 +73,7 @@ def build_default_composer() -> PromptComposer:
     composer.register("self", self_section)
     composer.register("facts", facts_section)
     composer.register("relations", relations_section)
+    composer.register("diary", diary_section)
     composer.register("summary", summary_section)
     composer.register("tools", tools_hint_section)
     composer.register("rules", rules_section)
