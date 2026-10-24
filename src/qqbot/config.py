@@ -40,6 +40,30 @@ class Settings(BaseSettings):
     daily_token_budget: int = 200_000
     request_timeout: float = 60.0
 
+    # 启用的功能模块，逗号分隔；默认只有 chat
+    enabled_modules: str = "chat"
+    tool_max_rounds: int = 4
+    # 是否把工具暴露给模型；默认关闭，保持纯聊天行为
+    tools_enabled: bool = False
+    # MCP server 配置，JSON 数组，空则不加载
+    mcp_servers: str = ""
+
+    @property
+    def enabled_module_list(self) -> list[str]:
+        return [m.strip() for m in self.enabled_modules.split(",") if m.strip()]
+
+    @property
+    def mcp_server_list(self) -> list[dict]:
+        import json
+
+        if not self.mcp_servers.strip():
+            return []
+        try:
+            data = json.loads(self.mcp_servers)
+        except json.JSONDecodeError:
+            return []
+        return data if isinstance(data, list) else []
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -24,7 +24,11 @@ _JSON_ARRAY = re.compile(r"\[.*\]", re.S)
 
 
 async def extract_facts(
-    store: Store, chat: ChatClient, recent: list[dict], source_msg_id: int | None
+    store: Store,
+    chat: ChatClient,
+    scope: str,
+    recent: list[dict],
+    source_msg_id: int | None,
 ) -> int:
     lines = [f"{m['role']}: {m['content']}" for m in recent]
     if not lines:
@@ -65,13 +69,14 @@ async def extract_facts(
             confidence = 0.8
         confidence = min(1.0, max(0.5, confidence))
         await store.upsert_fact(
-            subject=str(item.get("subject") or "user"),
-            predicate=predicate,
-            obj=obj,
-            confidence=confidence,
-            source_msg_id=source_msg_id,
+            scope,
+            str(item.get("subject") or "user"),
+            predicate,
+            obj,
+            confidence,
+            source_msg_id,
         )
         count += 1
     if count:
-        log.info("抽取到 %s 条事实", count)
+        log.info("抽取到 %s 条事实（scope=%s）", count, scope)
     return count

@@ -17,10 +17,12 @@ SUMMARY_PROMPT = """你在维护一段长期对话的记忆摘要。
 只输出摘要正文。"""
 
 
-async def maybe_update_summary(store: Store, chat: ChatClient, every: int) -> None:
-    latest = await store.latest_summary()
+async def maybe_update_summary(
+    store: Store, chat: ChatClient, scope: str, every: int
+) -> None:
+    latest = await store.latest_summary(scope)
     since_ts = float(latest["end_ts"]) if latest else 0.0
-    new_msgs = await store.messages_after(since_ts)
+    new_msgs = await store.messages_after(scope, since_ts)
     if len(new_msgs) < every:
         return
 
@@ -47,6 +49,6 @@ async def maybe_update_summary(store: Store, chat: ChatClient, every: int) -> No
     version = (int(latest["version"]) + 1) if latest else 1
     end_ts = time.time()
     await store.add_summary(
-        start_ts=since_ts, end_ts=end_ts, text=text[:800], version=version
+        scope, start_ts=since_ts, end_ts=end_ts, text=text[:800], version=version
     )
-    log.info("摘要已更新到 v%s（%s 字）", version, len(text))
+    log.info("摘要已更新到 v%s（scope=%s，%s 字）", version, scope, len(text))

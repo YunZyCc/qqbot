@@ -7,47 +7,30 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from .config import get_settings
-from .core.router import Bot
-from .llm.client import ChatClient
+from .app import AppContext, build_context, shutdown
+from .config import Settings, get_settings
 from .logging import setup_logging
-from .memory.store import Store
-from .onebot.api import OneBotAPI
 from .onebot.ws import create_ws_router
-from .persona.loader import load_persona
 
 log = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
-    if settings.owner_qq <= 0:
-        raise SystemExit("OWNER_QQ 未配置：请把 .env 里的 OWNER_QQ 改成你自己的 QQ 号")
-    if not settings.deepseek_api_key:
-        raise SystemExit("DEEPSEEK_API_KEY 未配置")
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
 
-    store = Store(settings.data_dir / "qqbot.db")
-    await store.init()
-    chat = ChatClient()
-    api = OneBotAPI()
-    bot = Bot(api, chat, store, load_persona(settings.persona_file))
-    app.state.bot = bot
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        ctx = await build_context(settings)
+        app.state.ctx = ctx
+        log.info("服务已启动，等待 NapCat 连接 %s", settings.onebot_ws_path)
+        try:
+            yield
+        finally:
+            await shutdown(ctx)
 
-    log.info("服务已启动，等待 NapCat 连接 %s", settings.onebot_ws_path)
-    try:
-        yield
-    finally:
-        await api.close()
-        await chat.close()
-        await store.close()
-
-
-def create_app() -> FastAPI:
     async def handle(event: dict) -> None:
-        bot = getattr(app.state, "bot", None)
-        if bot is not None:
-            await bot.handle_event(event)
+        ctx: AppContext = app.state.ctx
+        await ctx.bus.dispatch(event)
 
     app = FastAPI(lifespan=lifespan)
     app.include_router(create_ws_router(handle))

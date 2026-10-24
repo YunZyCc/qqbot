@@ -17,12 +17,13 @@ from qqbot.persona.loader import load_persona  # noqa: E402
 
 async def main() -> None:
     s = get_settings()
-    store = Store(s.data_dir / "qqbot.db")
+    scope = f"private:{s.owner_qq}"
+    store = Store(s.data_dir / "qqbot.db", default_scope=scope)
     await store.init()
 
-    history = await store.recent_messages(s.max_context_messages)
-    facts = await store.active_facts()
-    summary_row = await store.latest_summary()
+    history = await store.recent_messages(scope, s.max_context_messages)
+    facts = await store.active_facts(scope)
+    summary_row = await store.latest_summary(scope)
     summary = summary_row["text"] if summary_row else ""
     persona = load_persona(s.persona_file)
 
@@ -32,6 +33,7 @@ async def main() -> None:
     messages = build_messages(persona, summary, picked, history)
     total = sum(len(m["content"]) for m in messages)
 
+    print(f"# scope: {scope}")
     print(f"# 消息条数: {len(messages)}，总字符数: {total}")
     print(f"# 历史: {len(history)} 条；事实库: {len(facts)} 条；命中记忆: {len(picked)} 条")
     print(f"# 摘要: {'有，' + str(len(summary)) + ' 字' if summary else '无'}")

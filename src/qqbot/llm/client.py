@@ -61,5 +61,46 @@ class ChatClient:
         log.error("LLM 调用最终失败: %s", last_error)
         return FALLBACK, 0
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 600,
+        temperature: float = 0.85,
+    ) -> tuple[str, int, list[dict]]:
+        """带工具的调用，返回 (文本, tokens, tool_calls)。"""
+        if not self.key:
+            raise RuntimeError("DEEPSEEK_API_KEY 未配置")
+        if self.used_tokens >= self.budget:
+            return "（今天的话痨额度用完了，明天再聊吧。）", 0, []
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if tools:
+            payload["tools"] = tools
+        headers = {"Authorization": f"Bearer {self.key}"}
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                resp = await self._client.post(
+                    f"{self.base}/chat/completions", json=payload, headers=headers
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                message = data["choices"][0]["message"]
+                content = (message.get("content") or "").strip()
+                usage = int(data.get("usage", {}).get("total_tokens", 0))
+                self.used_tokens += usage
+                return content, usage, message.get("tool_calls") or []
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                log.warning("LLM(tool) 第 %s 次调用失败: %s", attempt + 1, exc)
+        log.error("LLM(tool) 调用最终失败: %s", last_error)
+        return FALLBACK, 0, []
+
     async def close(self) -> None:
         await self._client.aclose()
