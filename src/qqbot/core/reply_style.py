@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 
-DEFAULT_WEIGHTS = (45.0, 30.0, 15.0, 7.0, 3.0)
+DEFAULT_WEIGHTS = (50.0, 25.0, 15.0, 7.0, 3.0)
 
 
 def _pick_segment_count(weights: list[float] | None, max_segments: int) -> int:
@@ -94,9 +94,8 @@ def split_reply(
     for part in parts:
         expanded.extend(split_message(part, segment_max_chars))
 
-    # 再按权重决定发几条；多出来的并进最后一条
-    # 1~2 条是正常聊天节奏，不压缩；概率递减只作用于 3 条以上
-    target = max(2, _pick_segment_count(weights, max_segments))
+    # 按权重决定发几条；多出来的并进最后一条
+    target = _pick_segment_count(weights, max_segments)
     if len(expanded) > target:
         expanded = _merge_tail(expanded, target, segment_max_chars)
 

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from qqbot.core.reply_style import reply_delay, segment_interval, split_reply
+from qqbot.core.reply_style import (
+    DEFAULT_WEIGHTS,
+    reply_delay,
+    segment_interval,
+    split_reply,
+)
 
 # 权重故意做成极端值，把「按概率抽几条」变成确定性行为，方便断言
 ONE_ONLY = [100, 0, 0, 0, 0]
+TWO_ONLY = [0, 100, 0, 0, 0]
 FIVE_ONLY = [0, 0, 0, 0, 100]
 
 
@@ -24,17 +30,24 @@ def test_segment_max_chars_enforced():
     assert all(len(part) <= 40 for part in parts)
 
 
-def test_short_replies_not_compressed():
-    """一两条是正常节奏，权重再低也不合并。"""
+def test_weights_can_merge_two_into_one():
+    """抽到「只发一条」时，两段要合并，不能硬发两条。"""
     text = "今天等你消息|||说真的就这点事"
-    assert len(split_reply(text, 5, 40, ONE_ONLY)) == 2
+    parts = split_reply(text, 5, 40, ONE_ONLY)
+    assert len(parts) == 1
+    assert parts[0] == "今天等你消息，说真的就这点事"
 
 
-def test_three_or_more_can_be_compressed():
+def test_weights_keep_two_when_target_is_two():
+    text = "今天等你消息|||说真的就这点事"
+    assert len(split_reply(text, 5, 40, TWO_ONLY)) == 2
+
+
+def test_three_or_more_compressed_to_one():
     text = "第一句在这|||第二句在这|||第三句在这"
     merged = split_reply(text, 5, 40, ONE_ONLY)
-    assert len(merged) == 2
-    assert merged[1] == "第二句在这，第三句在这"
+    assert len(merged) == 1
+    assert "，第二句在这，第三句在这" in merged[0]
 
 
 def test_weights_can_keep_five():
@@ -62,19 +75,24 @@ def test_fallback_splits_sentences():
 def test_merge_adds_comma_between_pieces():
     text = "第一句在这|||今天等你消息|||说真的就这点事"
     merged = split_reply(text, 5, 40, ONE_ONLY)
-    assert "今天等你消息，说真的就这点事" in merged
+    assert len(merged) == 1
+    assert "今天等你消息，说真的就这点事" in merged[0]
 
 
-def test_default_weights_favour_short_replies():
-    """默认权重下，长串回复应该被压短，5 条是小概率。"""
+def test_default_weights_favour_single_reply():
+    """默认权重下，「一条」应该最常见，四五条是小概率。"""
     text = "|||".join(f"第{i}句话在这" for i in range(1, 6))
     counts: dict[int, int] = {}
-    for _ in range(400):
+    for _ in range(500):
         length = len(split_reply(text, 5, 40))
         counts[length] = counts.get(length, 0) + 1
+    assert counts.get(1, 0) > counts.get(2, 0)
     assert counts.get(2, 0) > counts.get(3, 0)
-    assert counts.get(3, 0) > counts.get(5, 0)
-    assert counts.get(5, 0) < 40
+    assert counts.get(4, 0) + counts.get(5, 0) < 70
+
+
+def test_default_weights_are_ordered_descending():
+    assert list(DEFAULT_WEIGHTS) == sorted(DEFAULT_WEIGHTS, reverse=True)
 
 
 def test_delay_ranges():

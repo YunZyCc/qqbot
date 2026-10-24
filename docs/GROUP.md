@@ -36,7 +36,7 @@
 | 1 | 消息里有 `at` 段指向机器人 QQ | **必回** |
 | 2 | 文本含触发词（默认「大肥鱼」） | **必回** |
 | 3 | 处于**活跃期** | **必回** |
-| 4 | 其他 | 按 `GROUP_REPLY_CHANCE`（0.15）**概率回** |
+| 4 | 其他 | 按 `GROUP_REPLY_CHANCE`（0.2）**概率回** |
 
 第 4 级还要过两道过滤：
 
@@ -95,7 +95,7 @@ group_active_until:<群号> = now + GROUP_ACTIVE_MINUTES * 60
 | `GROUP_ENABLED` | `true` | 总开关。关掉后退回纯私聊策略 |
 | `GROUP_WHITELIST` | `1083370981` | 逗号分隔的群号；空=不接任何群 |
 | `GROUP_TRIGGER_NAMES` | `大肥鱼` | 命中就必回的名字，逗号分隔 |
-| `GROUP_REPLY_CHANCE` | `0.15` | 没触发时插话的概率 |
+| `GROUP_REPLY_CHANCE` | `0.2` | 没触发时插话的概率 |
 | `GROUP_REPLY_COOLDOWN` | `60` | 概率回复的最小间隔（秒） |
 | `GROUP_ACTIVE_MINUTES` | `5` | 回过话后保持对话的时长（分钟） |
 | `GROUP_MIN_CHARS` | `4` | 太短的消息不接 |
