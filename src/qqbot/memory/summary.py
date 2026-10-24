@@ -84,6 +84,12 @@ async def merge_rolling(store: Store, chat: ChatClient, scope: str) -> bool:
         return False
 
     rolling = await store.latest_summary(scope, "rolling")
+    # 这份 session 已经合并过就不再合并：启动补跑会重复调用这里，别白花 token
+    merged_session = await store.get_setting(f"rolling_session:{scope}", "0")
+    if merged_session == str(session["id"]):
+        log.info("rolling 摘要已包含最新 session，跳过（scope=%s）", scope)
+        return False
+
     previous = rolling["text"] if rolling else "（无）"
     user_content = (
         f"旧长期印象：\n{previous}\n\n今天的会话摘要：\n{session['text']}"
@@ -106,8 +112,13 @@ async def merge_rolling(store: Store, chat: ChatClient, scope: str) -> bool:
         return False
     version = (int(rolling["version"]) + 1) if rolling else 1
     await store.add_summary(
-        scope, start_ts=0.0, end_ts=time.time(), text=text[:900], version=version,
+        scope,
+        start_ts=float(session.get("start_ts") or 0.0),
+        end_ts=float(session["end_ts"]),
+        text=text[:900],
+        version=version,
         kind="rolling",
     )
+    await store.set_setting(f"rolling_session:{scope}", str(session["id"]))
     log.info("rolling 摘要更新到 v%s（scope=%s）", version, scope)
     return True

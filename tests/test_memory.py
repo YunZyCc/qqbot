@@ -150,3 +150,26 @@ def test_normalize_kind_falls_back_on_confidence():
     assert _normalize_kind("fact", 0.6) == "fact"
     assert _normalize_kind("", 0.9) == "fact"
     assert _normalize_kind("", 0.6) == "focus"
+
+
+async def test_merge_rolling_is_idempotent(tmp_path):
+    from qqbot.memory.summary import merge_rolling
+
+    class FakeChat:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, messages, max_tokens=0, temperature=0):
+            self.calls += 1
+            return "长期印象正文", 1
+
+    store = await _store(tmp_path)
+    chat = FakeChat()
+    await store.add_summary("private:1", 0.0, 10.0, "第一版会话摘要", 1, kind="session")
+
+    assert await merge_rolling(store, chat, "private:1") is True
+    assert chat.calls == 1
+    # 同一份 session 再合并一次应该直接跳过，不烧 token
+    assert await merge_rolling(store, chat, "private:1") is False
+    assert chat.calls == 1
+    await store.close()
