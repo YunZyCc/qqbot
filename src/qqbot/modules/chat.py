@@ -13,6 +13,7 @@ from ..core.reply_style import reply_delay, segment_interval, split_reply
 from ..core.session import SessionContext, session_from_event
 from ..memory.episodes import maybe_create_episode
 from ..memory.facts import extract_facts, has_signal
+from ..memory.growth import active_traits, collect_signals
 from ..memory.summary import maybe_update_summary
 from ..prompt.composer import PromptContext
 
@@ -157,6 +158,19 @@ class ChatModule:
             )
         )
 
+        # 人格成长：低频观察，攒够证据才会真正改变她
+        if settings.growth_enabled and sctx.turns % settings.growth_every == 0:
+            recent_growth = await ctx.store.recent_messages(scope, 20)
+            asyncio.create_task(
+                collect_signals(
+                    ctx.store,
+                    ctx.llm,
+                    recent_growth,
+                    promote_after=settings.growth_promote_after,
+                    vector=ctx.vector,
+                )
+            )
+
     async def _maybe_auto_sticker(
         self, sender: int, user_text: str, reply_text: str, sctx: SessionContext
     ) -> None:
@@ -211,6 +225,9 @@ async def build_reply_messages(
     relations = await ctx.contacts.relations_of(sender)
     self_state = await ctx.self_memory.get_state()
     emotion_text = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
+    evolution = (
+        await active_traits(ctx.store) if settings.growth_enabled else []
+    )
 
     rolling = await ctx.store.latest_summary(scope, "rolling")
     session = await ctx.store.latest_summary(scope, "session")
@@ -249,6 +266,7 @@ async def build_reply_messages(
     return ctx.prompt.compose(
         PromptContext(
             persona=ctx.persona,
+            evolution=evolution,
             summary=summary,
             facts=facts,
             episodes=episodes,

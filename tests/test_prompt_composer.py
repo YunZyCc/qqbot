@@ -9,6 +9,7 @@ def test_section_order():
     composer = build_default_composer()
     assert composer.sections() == [
         "persona",
+        "evolution",
         "time",
         "self",
         "emotion",
@@ -112,3 +113,29 @@ def test_legacy_fact_without_source_still_renders():
         )
     )
     assert "喜欢：猫" in messages[0]["content"]
+
+
+def test_evolution_rendered():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(
+            persona="人设",
+            evolution=[
+                {"kind": "style", "content": "你正在戒掉「行吧」"},
+                {"kind": "address", "content": "你叫他「老板」"},
+            ],
+            history=[{"role": "user", "content": "hi"}],
+        )
+    )
+    content = messages[0]["content"]
+    assert "你正在戒掉「行吧」" in content
+    assert "你叫他「老板」" in content
+    assert "你自己长出来的" in content
+
+
+def test_evolution_empty_skipped():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(persona="人设", history=[{"role": "user", "content": "hi"}])
+    )
+    assert "你自己长出来的" not in messages[0]["content"]

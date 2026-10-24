@@ -20,6 +20,19 @@ def persona_section(ctx: PromptContext) -> str:
 _WEEKDAYS = "一二三四五六日"
 
 
+def evolution_section(ctx: PromptContext) -> str:
+    """人格成长层：她自己长出来的变化，跟骨架分开放。"""
+    if not ctx.evolution:
+        return ""
+    lines = [f"- {row['content']}" for row in ctx.evolution if row.get("content")]
+    if not lines:
+        return ""
+    return (
+        "你最近的变化（这是你自己长出来的，已经是你的一部分，"
+        "自然地用，别当清单念）：\n" + "\n".join(lines)
+    )
+
+
 def time_section(ctx: PromptContext) -> str:
     """模型不知道今天是几号，就理解不了「最近」「今天」，搜索结果的时效也判断不了。"""
     now = dt.datetime.now()
@@ -123,6 +136,7 @@ def rules_section(ctx: PromptContext) -> str:
 def build_default_composer() -> PromptComposer:
     composer = PromptComposer()
     composer.register("persona", persona_section)
+    composer.register("evolution", evolution_section)
     composer.register("time", time_section)
     composer.register("self", self_section)
     composer.register("emotion", emotion_section)

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     retrieve_top_k: int = 5
     # focus 类记忆（最近在忙/关注什么）的有效期，过期不再进 prompt
     focus_ttl_days: int = 3
+    # 人格成长：攒够几次信号才真正改变自己
+    growth_enabled: bool = True
+    growth_every: int = 10
+    growth_promote_after: int = 3
     reply_max_chars: int = 500
     daily_token_budget: int = 200_000
     request_timeout: float = 60.0

@@ -144,6 +144,20 @@ CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
 );
+
+-- 人格成长：候选信号攒够证据才升级成 active，单独存在，绝不回写 persona.md
+CREATE TABLE IF NOT EXISTS persona_traits (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope          TEXT NOT NULL DEFAULT 'bot:self',
+    kind           TEXT NOT NULL,
+    content        TEXT NOT NULL,
+    evidence_count INTEGER NOT NULL DEFAULT 1,
+    confidence     REAL NOT NULL DEFAULT 0.5,
+    status         TEXT NOT NULL DEFAULT 'candidate',
+    first_seen     REAL NOT NULL,
+    updated_at     REAL NOT NULL,
+    UNIQUE(scope, kind, content)
+);
 """
 
 # 索引单独建：旧库先补列，再建引用新列的索引
@@ -163,6 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_scope ON embeddings(scope, ref_type);
 CREATE INDEX IF NOT EXISTS idx_image_refs_scope ON image_refs(scope, id);
 CREATE INDEX IF NOT EXISTS idx_image_refs_hash ON image_refs(sha256);
 CREATE INDEX IF NOT EXISTS idx_stickers_emotion ON stickers(emotion);
+CREATE INDEX IF NOT EXISTS idx_traits_status ON persona_traits(scope, status, updated_at);
 """
 
 
@@ -646,6 +661,84 @@ class Store:
     async def list_stickers(self) -> list[dict]:
         cur = await self.db.execute("SELECT * FROM stickers WHERE enabled=1")
         return [dict(r) for r in await cur.fetchall()]
+
+    # ---------- 人格成长 ----------
+    async def record_trait_signal(
+        self, scope: str, kind: str, content: str, promote_after: int
+    ) -> dict:
+        """记一次人格信号：同类内容累加证据，攒够 promote_after 次就升为 active。"""
+        now = time.time()
+        cur = await self.db.execute(
+            "SELECT id, evidence_count, status FROM persona_traits"
+            " WHERE scope=? AND kind=? AND content=?",
+            (scope, kind, content),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            status = "active" if promote_after <= 1 else "candidate"
+            await self.db.execute(
+                "INSERT INTO persona_traits(scope, kind, content, evidence_count,"
+                " confidence, status, first_seen, updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (scope, kind, content, 1, 0.6 if status == "active" else 0.5,
+                 status, now, now),
+            )
+            await self.db.commit()
+            return {"created": True, "promoted": status == "active"}
+
+        count = int(row["evidence_count"]) + 1
+        status = row["status"]
+        promoted = False
+        if status == "candidate" and count >= promote_after:
+            status = "active"
+            promoted = True
+        confidence = min(0.95, 0.5 + 0.1 * count)
+        await self.db.execute(
+            "UPDATE persona_traits SET evidence_count=?, status=?, confidence=?,"
+            " updated_at=? WHERE id=?",
+            (count, status, confidence, now, row["id"]),
+        )
+        await self.db.commit()
+        return {"created": False, "promoted": promoted}
+
+    async def list_traits(
+        self, scope: str, status: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        if status is None:
+            cur = await self.db.execute(
+                "SELECT * FROM persona_traits WHERE scope=?"
+                " ORDER BY evidence_count DESC, updated_at DESC LIMIT ?",
+                (scope, limit),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM persona_traits WHERE scope=? AND status=?"
+                " ORDER BY evidence_count DESC, updated_at DESC LIMIT ?",
+                (scope, status, limit),
+            )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def prune_traits(self, scope: str, keep: int) -> int:
+        """active 超过上限时，把证据最少、最久没更新的一批降回候选。"""
+        active = await self.list_traits(scope, "active", limit=200)
+        if len(active) <= keep:
+            return 0
+        losers = active[keep:]
+        for row in losers:
+            await self.db.execute(
+                "UPDATE persona_traits SET status='candidate', updated_at=?"
+                " WHERE id=? AND status='active'",
+                (time.time(), row["id"]),
+            )
+        await self.db.commit()
+        return len(losers)
+
+    async def clear_traits(self, scope: str) -> int:
+        cur = await self.db.execute(
+            "DELETE FROM persona_traits WHERE scope=?", (scope,)
+        )
+        await self.db.commit()
+        return cur.rowcount
 
     # ---------- settings ----------
     async def get_setting(self, key: str, default: str = "") -> str:

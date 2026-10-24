@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 @dataclass(slots=True)
 class PromptContext:
     persona: str = ""
+    evolution: list[dict] = field(default_factory=list)
     summary: str = ""
     facts: list[dict] = field(default_factory=list)
     episodes: list[dict] = field(default_factory=list)
