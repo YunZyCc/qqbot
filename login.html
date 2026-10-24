@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>NapCat 扫码登录</title>
+<style>
+  body { background:#111; color:#eee; font-family: "Microsoft YaHei", sans-serif;
+         text-align:center; padding:24px; }
+  h1 { font-size:20px; font-weight:600; }
+  p  { color:#888; font-size:13px; }
+  img { width:420px; height:420px; background:#fff; padding:16px;
+        border-radius:10px; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+  <h1>扫码登录 QQ</h1>
+  <img id="qr" src="" alt="qrcode">
+  <p id="ts">加载中…</p>
+  <script>
+    const base = 'napcat/napcat/cache/qrcode.png';
+    function refresh() {
+      document.getElementById('qr').src = base + '?t=' + Date.now();
+      document.getElementById('ts').textContent =
+        '每 2 秒自动刷新 · ' + new Date().toLocaleTimeString();
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
