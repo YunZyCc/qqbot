@@ -45,11 +45,12 @@ class ChatModule:
                 log.info("忽略消息 sender=%s type=%s", ev.sender_id, ev.message_type)
             return
 
-        user_text = ev.text or to_user_text(ev.segments)
+        # 不要用 ev.text 兜底：它只提取纯文本，会把表情丢掉。to_user_text 会保留 [表情:xx]
+        user_text = to_user_text(ev.segments) or ev.text
         scope = ctx.policy.memory_scope(ev)
         image_parts = await self._describe_images(ev, scope)
         if image_parts:
-            user_text = (user_text + "".join(image_parts)).strip()
+            user_text = _attach_image_text(user_text, image_parts)
         if not user_text:
             return
 
@@ -76,10 +77,11 @@ class ChatModule:
             return
 
         scope = f"group:{gid}"
-        user_text = ev.text or to_user_text(ev.segments)
+        # 不要用 ev.text 兜底：它只提取纯文本，会把表情丢掉。to_user_text 会保留 [表情:xx]
+        user_text = to_user_text(ev.segments) or ev.text
         image_parts = await self._describe_images(ev, scope)
         if image_parts:
-            user_text = (user_text + "".join(image_parts)).strip()
+            user_text = _attach_image_text(user_text, image_parts)
         if not user_text:
             return
 
@@ -324,6 +326,17 @@ class ChatModule:
             sctx.last_sticker_turn = sctx.turns
             await ctx.store.set_setting(f"sticker_count:{today}", str(count + 1))
             log.info("自动表情包：%s", result)
+
+
+def _attach_image_text(user_text: str, parts: list[str]) -> str:
+    """把视觉描述填回 [图片] 占位符，没有占位就追加在后面。"""
+    text = user_text
+    for part in parts:
+        if "[图片]" in text:
+            text = text.replace("[图片]", part, 1)
+        else:
+            text = (text + part).strip()
+    return text.strip()
 
 
 async def build_reply_messages(

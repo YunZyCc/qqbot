@@ -52,7 +52,7 @@ def image_segments(segments: list[dict]) -> list[dict]:
 
 
 def to_user_text(segments: list[dict]) -> str:
-    """把用户发来的消息段转成可读文本，表情/图片用描述占位。"""
+    """把用户发来的消息段转成可读文本，图片统一留 [图片] 占位，稍后由视觉描述替换。"""
     parts: list[str] = []
     for seg in segments or []:
         if not isinstance(seg, dict):
@@ -64,10 +64,10 @@ def to_user_text(segments: list[dict]) -> str:
         elif kind == "face":
             parts.append(f"[表情:{face_name(data.get('id'))}]")
         elif kind == "mface":
-            parts.append(f"[表情包:{data.get('summary') or '表情包'}]")
+            summary = str(data.get("summary") or "").strip().strip("[]")
+            parts.append(f"[表情包:{summary}]" if summary else "[表情包]")
         elif kind == "image":
-            sub = str(data.get("sub_type") or "")
-            parts.append("[表情包]" if sub == "1" else "[图片]")
+            parts.append("[图片]")
         elif kind == "record":
             parts.append("[语音]")
         elif kind == "at":

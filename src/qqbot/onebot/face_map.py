@@ -167,7 +167,8 @@ FACE_NAMES: dict[int, str] = {
 
 
 def face_name(face_id) -> str:
+    """映射到中文名；未知 id 回退成「表情」，不带编号——模型看到编号只会说「我看不懂」。"""
     try:
-        return FACE_NAMES.get(int(face_id), f"表情{face_id}")
+        return FACE_NAMES.get(int(face_id)) or "表情"
     except (TypeError, ValueError):
-        return f"表情{face_id}"
+        return "表情"
