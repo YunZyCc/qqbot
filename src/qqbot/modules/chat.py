@@ -107,7 +107,12 @@ class ChatModule:
         if settings.reply_delay_enabled:
             await asyncio.sleep(reply_delay(settings))
 
-        parts = split_reply(reply_text, settings.reply_segments_max, settings.reply_max_chars)
+        parts = split_reply(
+            reply_text,
+            settings.reply_segments_max,
+            settings.reply_segment_max_chars,
+            settings.reply_segment_weight_list,
+        )
         for index, part in enumerate(parts):
             if index > 0 and settings.reply_delay_enabled:
                 await asyncio.sleep(segment_interval(settings))

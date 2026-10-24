@@ -66,12 +66,31 @@ class Settings(BaseSettings):
     embedding_timeout: float = 30.0
 
     # 回复风格
-    reply_segments_max: int = 3
+    reply_segments_max: int = 5
+    # 单段字数上限；1~40 字，像真人连发短消息
+    reply_segment_max_chars: int = 40
+    # 发几条的权重，逗号分隔，对应 1/2/3/4/5 段。越往后越少
+    reply_segment_weights: str = "45,30,15,7,3"
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
     reply_delay_max: float = 1.0
-    segment_interval_min: float = 1.0
-    segment_interval_max: float = 2.0
+    segment_interval_min: float = 0.4
+    segment_interval_max: float = 0.9
+
+    @property
+    def reply_segment_weight_list(self) -> list[float]:
+        items: list[float] = []
+        for piece in self.reply_segment_weights.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                value = float(piece)
+            except ValueError:
+                continue
+            if value > 0:
+                items.append(value)
+        return items or [45.0, 30.0, 15.0, 7.0, 3.0]
 
     # 主动开口
     proactive_enabled: bool = True

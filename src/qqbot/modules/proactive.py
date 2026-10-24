@@ -79,7 +79,12 @@ class ProactiveModule:
             return
 
         scope = f"private:{settings.owner_qq}"
-        parts = split_reply(text, 2, 300)
+        parts = split_reply(
+            text,
+            2,
+            settings.reply_segment_max_chars,
+            settings.reply_segment_weight_list,
+        )
         for index, part in enumerate(parts):
             if index:
                 await asyncio.sleep(segment_interval(settings))
