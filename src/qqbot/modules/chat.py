@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 
 from ..core.events import Event, EventKind
@@ -152,6 +153,8 @@ class ChatModule:
         sctx.turns += 1
         log.info("已回复 %s 段，共 %s 字", len(parts), len(reply_text))
 
+        await self._maybe_auto_sticker(sender, user_text, reply_text)
+
         # 信号词命中立即抽；否则每 N 轮兜底
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
             recent = await ctx.store.recent_messages(scope, 8)
@@ -177,3 +180,38 @@ class ChatModule:
         asyncio.create_task(
             maybe_create_episode(ctx.store, ctx.llm, scope, settings.episode_every)
         )
+
+    async def _maybe_auto_sticker(
+        self, sender: int, user_text: str, reply_text: str
+    ) -> None:
+        """用户明确要表情包、或按概率，自动补一张。"""
+        ctx = self.ctx
+        settings = ctx.settings
+        if not settings.sticker_enabled or ctx.stickers is None:
+            return
+
+        # 模型已经发过表情包就不再补
+        used = getattr(ctx.runtime, "last_tools", [])
+        if "send_sticker" in used:
+            return
+
+        wants = any(word in user_text for word in ("表情包", "表情", "斗图", "发个图"))
+        if not wants and random.random() > settings.sticker_auto_rate:
+            return
+
+        query = reply_text[:40] if reply_text else user_text
+        hits = await ctx.stickers.search(query, 1)
+        if not hits:
+            return
+        path = ctx.stickers.resolve(hits[0]["file"])
+        if path is None:
+            return
+        try:
+            await ctx.api.call(
+                "send_private_msg",
+                user_id=sender,
+                message=[{"type": "image", "data": {"file": str(path)}}],
+            )
+            log.info("自动发送表情包：%s", hits[0]["key"])
+        except Exception:
+            log.exception("自动发送表情包失败")

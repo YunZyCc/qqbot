@@ -25,6 +25,8 @@ class SimpleRuntime:
         self.tools = tools
         self.enabled = enabled
         self.max_rounds = max_rounds
+        # 最近一次 run 里实际调用了哪些工具，供上层去重
+        self.last_tools: list[str] = []
 
     async def run(
         self,
@@ -55,6 +57,7 @@ class SimpleRuntime:
         total = 0
         content = ""
         work = list(messages)
+        self.last_tools = []
 
         for _ in range(rounds):
             content, usage, tool_calls = await self.llm.complete_with_tools(
@@ -79,6 +82,7 @@ class SimpleRuntime:
                 except json.JSONDecodeError:
                     args = {}
                 result = await self.tools.run(name, args)
+                self.last_tools.append(name)
                 work.append(
                     {
                         "role": "tool",
