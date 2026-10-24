@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     reply_segment_max_chars: int = 100
     # 发几条的权重，逗号分隔，对应 1/2/3/4/5 条。越往后越少
     reply_segment_weights: str = "65,22,8,3,2"
+    # 整段回复不超过这个字数就强制发一条；短话拆开像「没说完」
+    reply_merge_under_chars: int = 60
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
     reply_delay_max: float = 1.0

@@ -64,13 +64,15 @@ def _merge_tail(parts: list[str], target: int, limit: int) -> list[str]:
 def split_reply(
     text: str,
     max_segments: int = 5,
-    segment_max_chars: int = 40,
+    segment_max_chars: int = 100,
     weights: list[float] | None = None,
     delimiter: str = "|||",
+    merge_under: int = 60,
 ) -> list[str]:
     """把 LLM 输出拆成 1~5 条短消息，每条不超过 segment_max_chars 字。
 
     发几条由权重决定：一条最常见，四五条连发很少出现。
+    但整段合起来不超过 merge_under 时强制合成一条——短话拆开只会像「没说完」。
     """
     from .splitter import split_message
 
@@ -94,8 +96,12 @@ def split_reply(
     for part in parts:
         expanded.extend(split_message(part, segment_max_chars))
 
-    # 按权重决定发几条；多出来的并进最后一条
-    target = _pick_segment_count(weights, max_segments)
+    # 短回复别拆：总共才几十个字，拆成两条就是「话说到一半」的观感
+    total_chars = sum(len(piece) for piece in expanded) + max(0, len(expanded) - 1)
+    if total_chars <= merge_under:
+        target = 1
+    else:
+        target = _pick_segment_count(weights, max_segments)
     if len(expanded) > target:
         expanded = _merge_tail(expanded, target, segment_max_chars)
 

@@ -17,7 +17,7 @@ FIVE_ONLY = [0, 0, 0, 0, 100]
 
 def test_split_by_delimiter():
     text = "今天天气真不错呀哈哈哈|||你说是不是这个道理呢"
-    assert split_reply(text, 5, 40, FIVE_ONLY) == [
+    assert split_reply(text, 5, 40, FIVE_ONLY, merge_under=0) == [
         "今天天气真不错呀哈哈哈",
         "你说是不是这个道理呢",
     ]
@@ -40,7 +40,7 @@ def test_weights_can_merge_two_into_one():
 
 def test_weights_keep_two_when_target_is_two():
     text = "今天等你消息|||说真的就这点事"
-    assert len(split_reply(text, 5, 40, TWO_ONLY)) == 2
+    assert len(split_reply(text, 5, 40, TWO_ONLY, merge_under=0)) == 2
 
 
 def test_three_or_more_compressed_to_one():
@@ -52,7 +52,7 @@ def test_three_or_more_compressed_to_one():
 
 def test_weights_can_keep_five():
     text = "|||".join(f"第{i}句话在这" for i in range(1, 6))
-    parts = split_reply(text, 5, 40, FIVE_ONLY)
+    parts = split_reply(text, 5, 40, FIVE_ONLY, merge_under=0)
     assert len(parts) == 5
 
 
@@ -67,7 +67,7 @@ def test_single_reply_without_delimiter():
 
 
 def test_fallback_splits_sentences():
-    parts = split_reply("你开心就好。要不要再来一张看看？", 5, 40, FIVE_ONLY)
+    parts = split_reply("你开心就好。要不要再来一张看看？", 5, 40, FIVE_ONLY, merge_under=0)
     assert len(parts) == 2
     assert parts[0].endswith("。")
 
@@ -84,7 +84,7 @@ def test_default_weights_favour_single_reply():
     text = "|||".join(f"第{i}句话在这" for i in range(1, 6))
     counts: dict[int, int] = {}
     for _ in range(500):
-        length = len(split_reply(text, 5, 40))
+        length = len(split_reply(text, 5, 40, merge_under=0))
         counts[length] = counts.get(length, 0) + 1
     assert counts.get(1, 0) > counts.get(2, 0)
     assert counts.get(2, 0) > counts.get(3, 0)
@@ -105,3 +105,18 @@ def test_delay_ranges():
     for _ in range(50):
         assert 0.5 <= reply_delay(settings) <= 3.0
         assert 1.0 <= segment_interval(settings) <= 2.0
+
+
+def test_short_reply_forced_into_one():
+    """截图里那种「嘻嘻啥，笑得这么贼 ||| 是不是又憋着什么坏」不该拆两条。"""
+    text = "嘻嘻啥，笑得这么贼|||是不是又憋着什么坏"
+    parts = split_reply(text, 5, 100, [0, 100, 0, 0, 0], merge_under=60)
+    assert len(parts) == 1
+    assert parts[0] == "嘻嘻啥，笑得这么贼，是不是又憋着什么坏"
+
+
+def test_long_reply_still_splits():
+    """超过阈值时权重仍然生效，该连发就连发。"""
+    long_text = "这部分内容比较长，" * 8 + "|||" + "另一段也比较长，" * 8
+    parts = split_reply(long_text, 5, 100, [0, 100, 0, 0, 0], merge_under=60)
+    assert len(parts) == 2

@@ -216,6 +216,7 @@ class ChatModule:
             settings.reply_segments_max,
             settings.reply_segment_max_chars,
             settings.reply_segment_weight_list,
+            merge_under=settings.reply_merge_under_chars,
         )
         for index, part in enumerate(parts):
             if index > 0 and settings.reply_delay_enabled:
