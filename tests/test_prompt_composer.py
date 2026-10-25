@@ -140,3 +140,29 @@ def test_evolution_empty_skipped():
         PromptContext(persona="人设", history=[{"role": "user", "content": "hi"}])
     )
     assert "你自己长出来的" not in messages[0]["content"]
+
+
+def test_reply_slots_injected_into_rules():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(
+            persona="人设",
+            reply_slots=3,
+            reply_slot_chars=20,
+            history=[{"role": "user", "content": "hi"}],
+        )
+    )
+    content = messages[0]["content"]
+    assert "这一轮你会发 3 条消息" in content
+    assert "每条不超过 20 字" in content
+    assert "总共别超过 60 字" in content
+    # 有 slots 时不能再出现「默认就发一条」这种反向指令
+    assert "默认就发一条" not in content
+
+
+def test_no_slot_hint_when_zero():
+    composer = build_default_composer()
+    messages = composer.compose(
+        PromptContext(persona="人设", history=[{"role": "user", "content": "hi"}])
+    )
+    assert "这一轮你发" not in messages[0]["content"]

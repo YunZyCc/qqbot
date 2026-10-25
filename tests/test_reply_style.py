@@ -17,7 +17,7 @@ FIVE_ONLY = [0, 0, 0, 0, 100]
 
 def test_split_by_delimiter():
     text = "今天天气真不错呀哈哈哈|||你说是不是这个道理呢"
-    assert split_reply(text, 5, 40, FIVE_ONLY, merge_under=0) == [
+    assert split_reply(text, 5, 40, FIVE_ONLY) == [
         "今天天气真不错呀哈哈哈",
         "你说是不是这个道理呢",
     ]
@@ -40,7 +40,7 @@ def test_weights_can_merge_two_into_one():
 
 def test_weights_keep_two_when_target_is_two():
     text = "今天等你消息|||说真的就这点事"
-    assert len(split_reply(text, 5, 40, TWO_ONLY, merge_under=0)) == 2
+    assert len(split_reply(text, 5, 40, TWO_ONLY)) == 2
 
 
 def test_three_or_more_compressed_to_one():
@@ -52,7 +52,7 @@ def test_three_or_more_compressed_to_one():
 
 def test_weights_can_keep_five():
     text = "|||".join(f"第{i}句话在这" for i in range(1, 6))
-    parts = split_reply(text, 5, 40, FIVE_ONLY, merge_under=0)
+    parts = split_reply(text, 5, 40, FIVE_ONLY)
     assert len(parts) == 5
 
 
@@ -67,7 +67,7 @@ def test_single_reply_without_delimiter():
 
 
 def test_fallback_splits_sentences():
-    parts = split_reply("你开心就好。要不要再来一张看看？", 5, 40, FIVE_ONLY, merge_under=0)
+    parts = split_reply("你开心就好。要不要再来一张看看？", 5, 40, FIVE_ONLY)
     assert len(parts) == 2
     assert parts[0].endswith("。")
 
@@ -79,16 +79,21 @@ def test_merge_adds_comma_between_pieces():
     assert "今天等你消息，说真的就这点事" in merged[0]
 
 
-def test_default_weights_favour_single_reply():
-    """默认权重下，「一条」应该最常见，四五条是小概率。"""
-    text = "|||".join(f"第{i}句话在这" for i in range(1, 6))
-    counts: dict[int, int] = {}
-    for _ in range(500):
-        length = len(split_reply(text, 5, 40, merge_under=0))
-        counts[length] = counts.get(length, 0) + 1
-    assert counts.get(1, 0) > counts.get(2, 0)
-    assert counts.get(2, 0) > counts.get(3, 0)
-    assert counts.get(4, 0) + counts.get(5, 0) < 70
+def test_short_text_stays_one_message():
+    """20 字以内的话装得进一条，权重再高也发不成多条。"""
+    text = "今天上班真是累得不行啊"
+    for weights in ([100, 0, 0, 0, 0], [0, 0, 0, 0, 100]):
+        parts = split_reply(text, 5, 20, weights)
+        assert len(parts) == 1
+        assert len(parts[0]) <= 20
+
+
+def test_long_text_must_split_even_if_weights_want_one():
+    """想发一条但内容超 20 字，只能切开——单条上限优先于权重。"""
+    text = "这是一句比较长的话，" * 4
+    parts = split_reply(text, 5, 20, [100, 0, 0, 0, 0])
+    assert len(parts) >= 2
+    assert all(len(p) <= 20 for p in parts)
 
 
 def test_default_weights_are_ordered_descending():
@@ -107,19 +112,20 @@ def test_delay_ranges():
         assert 1.0 <= segment_interval(settings) <= 2.0
 
 
-def test_short_reply_forced_into_one():
-    """截图里那种「嘻嘻啥，笑得这么贼 ||| 是不是又憋着什么坏」不该拆两条。"""
-    text = "嘻嘻啥，笑得这么贼|||是不是又憋着什么坏"
-    parts = split_reply(text, 5, 100, [0, 100, 0, 0, 0], merge_under=60)
+def test_verbatim_not_split():
+    """念日记/贴代码这类原文不按字数切碎。"""
+    diary = "今天对方没来找我，我把记忆柜从里到外整理了一遍，顺手毒了自己一句。"
+    parts = split_reply(diary, 5, 20, [100, 0, 0, 0], verbatim=True)
     assert len(parts) == 1
-    assert parts[0] == "嘻嘻啥，笑得这么贼，是不是又憋着什么坏"
+    assert parts[0] == diary
 
 
-def test_long_reply_still_splits():
-    """超过阈值时权重仍然生效，该连发就连发。"""
-    long_text = "这部分内容比较长，" * 8 + "|||" + "另一段也比较长，" * 8
-    parts = split_reply(long_text, 5, 100, [0, 100, 0, 0, 0], merge_under=60)
-    assert len(parts) == 2
+def test_each_segment_capped_at_20():
+    """单条最多 20 字，超了必须切开。"""
+    long_text = "这部分内容比较长，" * 8
+    parts = split_reply(long_text, 5, 20, [100, 0, 0, 0])
+    assert len(parts) >= 2
+    assert all(len(p) <= 20 for p in parts)
 
 
 def test_merge_uses_period_before_question():
@@ -156,5 +162,5 @@ def test_merge_keeps_existing_punct():
 def test_max_segments_is_hard_even_when_pieces_long():
     """637 字的日记被切成 9 段发出去过；硬上限必须生效，宁可最后一条长。"""
     text = "这是一段很长的内容，" * 80  # 约 800 字，切完远超 5 段
-    parts = split_reply(text, 5, 100, [100, 0, 0, 0, 0], merge_under=0)
+    parts = split_reply(text, 5, 100, [100, 0, 0, 0, 0])
     assert len(parts) <= 5

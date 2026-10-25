@@ -66,13 +66,10 @@ class Settings(BaseSettings):
 
     # 回复风格
     reply_segments_max: int = 5
-    # 单条字数硬上限。这是「每条」的上限，不是整个回复的总长度上限。
-    # 放宽到 100 是为了让「两段合一」更容易成立，减少连发条数；真正该多短交给 prompt 引导
-    reply_segment_max_chars: int = 100
-    # 发几条的权重，逗号分隔，对应 1/2/3/4/5 条。越往后越少
-    reply_segment_weights: str = "65,22,8,3,2"
-    # 整段回复不超过这个字数就强制发一条；短话拆开像「没说完」
-    reply_merge_under_chars: int = 60
+    # 单条字数上限：每条最多 20 字（念日记/贴代码这类原文不受限）
+    reply_segment_max_chars: int = 20
+    # 每轮发几条的权重，对应 1/2/3/4/5 条
+    reply_segment_weights: str = "30,22,18,18,12"
     reply_delay_enabled: bool = True
     reply_delay_min: float = 0.5
     reply_delay_max: float = 1.0
@@ -92,7 +89,7 @@ class Settings(BaseSettings):
                 continue
             if value > 0:
                 items.append(value)
-        return items or [65.0, 22.0, 8.0, 3.0, 2.0]
+        return items or [30.0, 22.0, 18.0, 18.0, 12.0]
 
     # 群聊：记录按 group:<群号> 隔离，不跟私聊混
     group_enabled: bool = True

@@ -3,10 +3,10 @@ from __future__ import annotations
 import random
 import re
 
-DEFAULT_WEIGHTS = (65.0, 22.0, 8.0, 3.0, 2.0)
+DEFAULT_WEIGHTS = (30.0, 22.0, 18.0, 18.0, 12.0)
 
 
-def _pick_segment_count(weights: list[float] | None, max_segments: int) -> int:
+def pick_segment_count(weights: list[float] | None, max_segments: int) -> int:
     """按权重抽要发几条。权重越靠前越大，所以短回复常见、连发少见。"""
     pool = list((weights or DEFAULT_WEIGHTS)[:max_segments])
     total = sum(pool)
@@ -81,15 +81,15 @@ def _merge_tail(parts: list[str], target: int, limit: int) -> list[str]:
 def split_reply(
     text: str,
     max_segments: int = 5,
-    segment_max_chars: int = 100,
+    segment_max_chars: int = 20,
     weights: list[float] | None = None,
     delimiter: str = "|||",
-    merge_under: int = 60,
+    verbatim: bool = False,
 ) -> list[str]:
     """把 LLM 输出拆成 1~5 条短消息，每条不超过 segment_max_chars 字。
 
-    发几条由权重决定：一条最常见，四五条连发很少出现。
-    但整段合起来不超过 merge_under 时强制合成一条——短话拆开只会像「没说完」。
+    条数由权重决定（30,22,18,18,12）：一条最常见，五条连发最少见。
+    verbatim=True 用于「念日记 / 贴代码」这类原文，不按字数切碎，只按分隔符拆。
     """
     from .splitter import split_message
 
@@ -100,6 +100,10 @@ def split_reply(
     parts = [p.strip() for p in text.split(delimiter) if p.strip()]
     if not parts:
         parts = [text]
+
+    # 原文输出：绝不切碎，按原样分段
+    if verbatim:
+        return parts[:max_segments] if parts else [text]
 
     # 模型没按 ||| 输出时，按句末标点切，模拟连发
     if len(parts) == 1 and max_segments > 1:
@@ -113,12 +117,8 @@ def split_reply(
     for part in parts:
         expanded.extend(split_message(part, segment_max_chars))
 
-    # 短回复别拆：总共才几十个字，拆成两条就是「话说到一半」的观感
-    total_chars = sum(len(piece) for piece in expanded) + max(0, len(expanded) - 1)
-    if total_chars <= merge_under:
-        target = 1
-    else:
-        target = _pick_segment_count(weights, max_segments)
+    # 条数按权重抽；多出来的并进最后一条，但合并后仍不能超过单条上限
+    target = pick_segment_count(weights, max_segments)
     if len(expanded) > target:
         expanded = _merge_tail(expanded, target, segment_max_chars)
 

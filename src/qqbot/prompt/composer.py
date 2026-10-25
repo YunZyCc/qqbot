@@ -19,6 +19,9 @@ class PromptContext:
     images: str = ""
     tools_hint: str = ""
     rules: str = ""
+    # 这一轮打算发几条、每条最多几个字（由权重先抽好，写进 prompt 让模型按量输出）
+    reply_slots: int = 0
+    reply_slot_chars: int = 20
     history: list[dict] = field(default_factory=list)
 
 

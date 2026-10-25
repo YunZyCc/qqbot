@@ -9,7 +9,12 @@ import time
 
 from ..core.events import Event, EventKind
 from ..core.message import image_segments, to_user_text
-from ..core.reply_style import reply_delay, segment_interval, split_reply
+from ..core.reply_style import (
+    pick_segment_count,
+    reply_delay,
+    segment_interval,
+    split_reply,
+)
 from ..core.session import SessionContext, session_from_event
 from ..memory.context import current_scope
 from ..memory.episodes import maybe_create_episode
@@ -204,19 +209,37 @@ class ChatModule:
             else settings.max_context_messages
         )
         history = await ctx.store.recent_messages(scope, context_limit)
-        messages = await build_reply_messages(ctx, scope, sender, user_text, history)
+        # 先按权重抽这一轮发几条，写进 prompt 让模型按量输出
+        slots = pick_segment_count(
+            settings.reply_segment_weight_list, settings.reply_segments_max
+        )
+        messages = await build_reply_messages(
+            ctx,
+            scope,
+            sender,
+            user_text,
+            history,
+            reply_slots=slots,
+            reply_slot_chars=settings.reply_segment_max_chars,
+        )
         reply_text, _ = await ctx.runtime.run(messages, scope=scope)
         reply_text = (reply_text or "").strip() or "……我卡了一下，再说一遍？"
 
         if settings.reply_delay_enabled:
             await asyncio.sleep(reply_delay(settings))
 
+        diary_texts = [
+            row["text"] for row in await ctx.store.recent_diaries(3)
+        ]
+        verbatim = _looks_verbatim(reply_text, diary_texts)
+        if verbatim:
+            log.info("检测到原文输出（日记/代码），不按字数切分")
         parts = split_reply(
             reply_text,
             settings.reply_segments_max,
             settings.reply_segment_max_chars,
             settings.reply_segment_weight_list,
-            merge_under=settings.reply_merge_under_chars,
+            verbatim=verbatim,
         )
         for index, part in enumerate(parts):
             if index > 0 and settings.reply_delay_enabled:
@@ -341,7 +364,14 @@ def _attach_image_text(user_text: str, parts: list[str]) -> str:
 
 
 async def build_reply_messages(
-    ctx, scope: str, sender: int, user_text: str, history: list[dict]
+    ctx,
+    scope: str,
+    sender: int,
+    user_text: str,
+    history: list[dict],
+    *,
+    reply_slots: int = 0,
+    reply_slot_chars: int = 20,
 ) -> list[dict]:
     """拼这次回复要发的完整 prompt；print_prompt 脚本也走这里，保证调试看到的就是真实内容。"""
     settings = ctx.settings
@@ -413,9 +443,27 @@ async def build_reply_messages(
             diary=diary_text,
             images=images_text,
             tools_hint=tools_hint,
+            reply_slots=reply_slots,
+            reply_slot_chars=reply_slot_chars,
             history=history,
         )
     )
+
+
+def _looks_verbatim(reply_text: str, diary_texts: list[str]) -> bool:
+    """念日记 / 贴代码这类原文不切碎，整条发出去。"""
+    if "```" in reply_text:
+        return True
+    if not diary_texts:
+        return False
+    joined = "\n".join(diary_texts)
+    window = 20
+    if len(reply_text) < window:
+        return False
+    for index in range(len(reply_text) - window + 1):
+        if reply_text[index:index + window] in joined:
+            return True
+    return False
 
 
 async def _build_chatroom(ctx, scope: str, sender: int) -> dict | None:

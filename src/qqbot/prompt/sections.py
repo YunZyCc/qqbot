@@ -6,14 +6,14 @@ import time
 from .composer import PromptComposer, PromptContext
 
 REPLY_RULES = """输出要求：
-- 像微信聊天一样自然，短句、口语。默认就一条，一般二三十字最舒服，最长别超过四十字。
-- **能一句说完就只发一句。** 默认就发一条，不要习惯性地拆成「主观点 + 补充」两条。
-- 真的还有话要说、或者想换个语气补一句，才用 ||| 再加一条。
-- 偶尔连发 3~4 条，连发五条很少见——别每次都炸一串。
+- 像微信聊天一样自然，短句、口语。
 - 不要 Markdown、不要列表、不要标题、不要加粗。
 - **一段里最多一个问号。** 别每句都用问句结尾，连着两轮更不行。
 - 不要客服腔。
 - 对方要表情包、或者你想用表情包回应时，调用 send_sticker 工具直接发，不要只说「给你发一个」。"""
+
+SPLIT_RULES = """- 默认就发一条，能一句说完别拆。
+- 偶尔连发 3~4 条，五条很少见。"""
 
 
 def chatroom_section(ctx: PromptContext) -> str:
@@ -200,7 +200,18 @@ def tools_hint_section(ctx: PromptContext) -> str:
 
 
 def rules_section(ctx: PromptContext) -> str:
-    return ctx.rules or REPLY_RULES
+    base = ctx.rules or REPLY_RULES
+    if ctx.reply_slots > 0:
+        # 这一轮条数已经定好，就别再给「默认发一条」这种反向指令，否则模型二选一会听前者
+        total = ctx.reply_slots * ctx.reply_slot_chars
+        return (
+            base
+            + f"\n\n这一轮你会发 {ctx.reply_slots} 条消息，用 ||| 分开。"
+            f"每条不超过 {ctx.reply_slot_chars} 字，总共别超过 {total} 字。"
+            f"注意：{ctx.reply_slots} 条就要有 {ctx.reply_slots} 句不同的话，"
+            "别只写一句拿分隔符凑数。"
+        )
+    return base + "\n" + SPLIT_RULES
 
 
 def build_default_composer() -> PromptComposer:
