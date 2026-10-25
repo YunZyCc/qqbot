@@ -175,6 +175,13 @@ class Settings(BaseSettings):
     sticker_min_score: float = 0.6
     sticker_max_size_kb: int = 2048
     sticker_sub_type: str = "1"
+    # 表情包检索：给 nekowhale 那 322 张建向量索引，和关键词混合排序
+    sticker_vector_search: bool = True
+    sticker_vector_weight: float = 0.5
+    # 别人发的表情包自动收进图库
+    sticker_auto_import: bool = True
+    sticker_auto_import_daily_max: int = 20
+    sticker_auto_import_max_kb: int = 2048
     # nekowhale 表情包知识库
     nekowhale_enabled: bool = True
     nekowhale_meta: Path = Path("meta/nekowhale.json")

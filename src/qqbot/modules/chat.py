@@ -176,6 +176,11 @@ class ChatModule:
                 await ctx.store.add_image_ref(
                     scope, ev.message_id, digest, mime, str(path), description
                 )
+                # 表情包图片顺手收进图库，以后她也能拿出来用
+                if ctx.stickers is not None and str(data.get("sub_type") or "") == "1":
+                    await ctx.stickers.import_from_image(
+                        raw, mime, description, digest
+                    )
                 parts.append(f"[图片:{description}]")
             else:
                 parts.append("[图片]")

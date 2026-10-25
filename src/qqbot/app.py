@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -182,8 +183,11 @@ async def build_context(settings: Settings | None = None) -> AppContext:
         log.exception("构建表情包索引失败")
 
     if settings.nekowhale_enabled:
-        ctx.sticker_kit = StickerKit(settings)
+        ctx.sticker_kit = StickerKit(settings, store, ctx.vector)
         ctx.sticker_kit.load()
+        # 322 张建向量要几十秒，放到后台跑，期间搜索走关键词
+        if ctx.vector is not None:
+            asyncio.create_task(ctx.sticker_kit.ensure_vectors())
     else:
         ctx.sticker_kit = None
 

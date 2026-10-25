@@ -118,7 +118,7 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
     async def send_sticker(query: str) -> str:
         kit = getattr(ctx, "sticker_kit", None)
         if kit is not None:
-            for hit in kit.search(query, 3):
+            for hit in await kit.search_hybrid(query, 3):
                 path = await kit.ensure_file(hit)
                 if path is None:
                     continue
@@ -131,6 +131,7 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
                 if path is None:
                     continue
                 if await _send_image(path, None):
+                    ctx.stickers.mark_used(int(hit["id"]))
                     return f"已发送表情包：{hit['key']}"
 
         return "没有找到合适的表情包"
