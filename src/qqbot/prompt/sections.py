@@ -203,12 +203,18 @@ def rules_section(ctx: PromptContext) -> str:
     base = ctx.rules or REPLY_RULES
     if ctx.reply_slots > 0:
         # 这一轮条数已经定好，就别再给「默认发一条」这种反向指令，否则模型二选一会听前者
-        total = ctx.reply_slots * ctx.reply_slot_chars
+        if ctx.reply_slot_chars > 0:
+            total = ctx.reply_slots * ctx.reply_slot_chars
+            size_hint = (
+                f"每条不超过 {ctx.reply_slot_chars} 字，总共别超过 {total} 字。"
+            )
+        else:
+            size_hint = "字数不限，但从简。"
         return (
             base
             + f"\n\n这一轮你会发 {ctx.reply_slots} 条消息，用 ||| 分开。"
-            f"每条不超过 {ctx.reply_slot_chars} 字，总共别超过 {total} 字。"
-            f"注意：{ctx.reply_slots} 条就要有 {ctx.reply_slots} 句不同的话，"
+            + size_hint
+            + f"注意：{ctx.reply_slots} 条就要有 {ctx.reply_slots} 句不同的话，"
             "别只写一句拿分隔符凑数。"
         )
     return base + "\n" + SPLIT_RULES

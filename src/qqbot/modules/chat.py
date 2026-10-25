@@ -240,6 +240,7 @@ class ChatModule:
             settings.reply_segment_max_chars,
             settings.reply_segment_weight_list,
             verbatim=verbatim,
+            target_segments=slots,
         )
         for index, part in enumerate(parts):
             if index > 0 and settings.reply_delay_enabled:

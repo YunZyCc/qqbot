@@ -66,8 +66,8 @@ class Settings(BaseSettings):
 
     # 回复风格
     reply_segments_max: int = 5
-    # 单条字数上限：每条最多 20 字（念日记/贴代码这类原文不受限）
-    reply_segment_max_chars: int = 20
+    # 单条字数上限：0 表示不限字数（只按条数拆）。设成 20 就是每条最多 20 字
+    reply_segment_max_chars: int = 0
     # 每轮发几条的权重，对应 1/2/3/4/5 条
     reply_segment_weights: str = "30,22,18,18,12"
     reply_delay_enabled: bool = True

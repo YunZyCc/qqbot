@@ -81,15 +81,17 @@ def _merge_tail(parts: list[str], target: int, limit: int) -> list[str]:
 def split_reply(
     text: str,
     max_segments: int = 5,
-    segment_max_chars: int = 20,
+    segment_max_chars: int = 0,
     weights: list[float] | None = None,
     delimiter: str = "|||",
     verbatim: bool = False,
+    target_segments: int = 0,
 ) -> list[str]:
-    """把 LLM 输出拆成 1~5 条短消息，每条不超过 segment_max_chars 字。
+    """把 LLM 输出拆成 1~5 条消息。
 
     条数由权重决定（30,22,18,18,12）：一条最常见，五条连发最少见。
-    verbatim=True 用于「念日记 / 贴代码」这类原文，不按字数切碎，只按分隔符拆。
+    segment_max_chars <= 0 表示单条不限字数，只按分隔符拆。
+    verbatim=True 用于「念日记 / 贴代码」这类原文，同样不切。
     """
     from .splitter import split_message
 
@@ -112,15 +114,22 @@ def split_reply(
         if 1 < len(sentences) <= max_segments:
             parts = sentences
 
-    # 先保证每段不超长
-    expanded: list[str] = []
-    for part in parts:
-        expanded.extend(split_message(part, segment_max_chars))
+    # 单条限长时才切；不限长就直接用原段
+    if segment_max_chars > 0:
+        expanded: list[str] = []
+        for part in parts:
+            expanded.extend(split_message(part, segment_max_chars))
+        merge_limit = segment_max_chars
+    else:
+        expanded = list(parts)
+        merge_limit = 10_000
 
-    # 条数按权重抽；多出来的并进最后一条，但合并后仍不能超过单条上限
-    target = pick_segment_count(weights, max_segments)
+    # 条数：外部抽好了就用外部的，避免 prompt 和发送各抽一次导致不一致
+    target = target_segments if 0 < target_segments <= max_segments else pick_segment_count(
+        weights, max_segments
+    )
     if len(expanded) > target:
-        expanded = _merge_tail(expanded, target, segment_max_chars)
+        expanded = _merge_tail(expanded, target, merge_limit)
 
     # 硬上限：宁可最后一条长一点，也不能发出去 9 条（之前 max_segments 被 _merge_tail 绕过了）
     if len(expanded) > max_segments:
