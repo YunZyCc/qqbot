@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import datetime as dt
 import logging
+from typing import TYPE_CHECKING
 
 import httpx
 
 from ..config import get_settings
+
+if TYPE_CHECKING:
+    from ..memory.store import Store
 
 log = logging.getLogger(__name__)
 
@@ -14,7 +19,7 @@ FALLBACK = "……我刚刚走神了，你再说一遍？"
 class ChatClient:
     """OpenAI 兼容的聊天客户端，带每日 token 预算。"""
 
-    def __init__(self) -> None:
+    def __init__(self, store: Store | None = None) -> None:
         settings = get_settings()
         self.base = settings.deepseek_base_url.rstrip("/")
         self.key = settings.deepseek_api_key
@@ -22,7 +27,23 @@ class ChatClient:
         self.timeout = settings.request_timeout
         self.budget = settings.daily_token_budget
         self.used_tokens = 0
+        # 有 store 就按自然日持久化计数；没有就退回进程内计数（测试用）
+        self.store = store
         self._client = httpx.AsyncClient(timeout=self.timeout)
+
+    def _today_key(self) -> str:
+        return f"token_usage:{dt.date.today().isoformat()}"
+
+    async def _over_budget(self) -> bool:
+        if self.store is None:
+            return self.used_tokens >= self.budget
+        used = await self.store.counter(self._today_key())
+        return used >= self.budget
+
+    async def _add_usage(self, usage: int) -> None:
+        self.used_tokens += usage
+        if self.store is not None and usage > 0:
+            await self.store.incr_counter(self._today_key(), usage)
 
     async def complete(
         self,
@@ -32,7 +53,7 @@ class ChatClient:
     ) -> tuple[str, int]:
         if not self.key:
             raise RuntimeError("DEEPSEEK_API_KEY 未配置")
-        if self.used_tokens >= self.budget:
+        if await self._over_budget():
             return "（今天的话痨额度用完了，明天再聊吧。）", 0
 
         payload = {
@@ -52,8 +73,8 @@ class ChatClient:
                 data = resp.json()
                 content = (data["choices"][0]["message"]["content"] or "").strip()
                 usage = int(data.get("usage", {}).get("total_tokens", 0))
-                self.used_tokens += usage
-                log.info("LLM 调用完成，tokens=%s 累计=%s", usage, self.used_tokens)
+                await self._add_usage(usage)
+                log.info("LLM 调用完成，tokens=%s 今日累计=%s", usage, self.used_tokens)
                 return content, usage
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
@@ -71,7 +92,7 @@ class ChatClient:
         """带工具的调用，返回 (文本, tokens, tool_calls)。"""
         if not self.key:
             raise RuntimeError("DEEPSEEK_API_KEY 未配置")
-        if self.used_tokens >= self.budget:
+        if await self._over_budget():
             return "（今天的话痨额度用完了，明天再聊吧。）", 0, []
 
         payload = {
@@ -94,7 +115,7 @@ class ChatClient:
                 message = data["choices"][0]["message"]
                 content = (message.get("content") or "").strip()
                 usage = int(data.get("usage", {}).get("total_tokens", 0))
-                self.used_tokens += usage
+                await self._add_usage(usage)
                 return content, usage, message.get("tool_calls") or []
             except Exception as exc:  # noqa: BLE001
                 last_error = exc

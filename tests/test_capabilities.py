@@ -67,3 +67,28 @@ def test_duplicate_action_rejected():
 
     with pytest.raises(ValueError):
         register_builtin_actions(registry, SimpleNamespace(api=FakeAPI()))
+
+
+async def test_token_budget_persists_per_day(tmp_path):
+    """额度按自然日存库；重启不重置，跨天自然归零。"""
+    from qqbot.llm.client import ChatClient
+    from qqbot.memory.store import Store
+
+    store = Store(tmp_path / "budget.db", default_scope="private:1")
+    await store.init()
+    client = ChatClient(store)
+    original = client.budget
+    try:
+        client.budget = 100
+        await client._add_usage(80)
+        assert await client._over_budget() is False
+
+        # 新客户端模拟重启：内存计数是 0，但库里还是 80
+        restarted = ChatClient(store)
+        restarted.budget = 100
+        assert await restarted._over_budget() is False
+        await restarted._add_usage(30)
+        assert await restarted._over_budget() is True
+    finally:
+        client.budget = original
+        await store.close()
