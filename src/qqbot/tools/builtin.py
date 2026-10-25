@@ -185,7 +185,39 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
         )
     )
 
+    _register_qzone_tool(registry, ctx)
+
     _register_search_tools(registry, ctx)
+
+
+class PostQzoneParams(BaseModel):
+    content: str
+
+
+def _register_qzone_tool(registry: ToolRegistry, ctx) -> None:
+    """说说工具：只有开了 qzone 才注册，免得没配好的时候模型瞎调。"""
+    if not getattr(ctx.settings, "qzone_enabled", False):
+        return
+
+    async def post_qzone(content: str) -> str:
+        from ..memory.social import post_qzone as _post
+
+        return await _post(ctx, content)
+
+    registry.register(
+        Tool(
+            name="post_qzone",
+            description=(
+                "发一条 QQ 空间说说，好友都能看到。"
+                "想分享一件事、一句心情、一个观察时就发，一天最多 3 次。"
+                "对方让你发说说时，必须真的调用这个工具发出去，"
+                "不能只说「我写了」「写点啥呢」就算完。"
+                "发完不用在聊天里特意宣布。"
+            ),
+            params=PostQzoneParams,
+            handler=post_qzone,
+        )
+    )
 
 
 def _register_search_tools(registry: ToolRegistry, ctx) -> None:

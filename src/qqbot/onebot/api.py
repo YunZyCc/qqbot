@@ -41,14 +41,28 @@ class OneBotAPI:
     async def get_login_info(self):
         return await self.call("get_login_info")
 
-    async def set_self_longnick(self, longnick: str):
-        return await self.call("set_self_longnick", longnick=longnick)
-
-    async def send_qzone_msg(self, content: str, images: list[str] | None = None):
-        params: dict = {"content": content, "ugc_right": 1}
+    async def send_qzone_msg(
+        self,
+        content: str,
+        images: list[str] | None = None,
+        ugc_right: int = 1,
+        target_uins: list[int] | None = None,
+    ):
+        params: dict = {"content": content, "ugc_right": ugc_right}
         if images:
             params["images"] = images
+        if target_uins:
+            params["target_uins"] = target_uins
         return await self.call("send_qzone_msg", **params)
+
+    async def set_self_longnick(self, longnick: str):
+        """改个性签名。NapCat 的返回结构不是标准 OneBot，要单独判 result。"""
+        data = await self.call("set_self_longnick", longNick=longnick)
+        if isinstance(data, dict):
+            result = data.get("result")
+            if result not in (0, None):
+                raise RuntimeError(f"改签名失败：{data.get('errMsg') or result}")
+        return data
 
     async def close(self) -> None:
         await self._client.aclose()

@@ -127,6 +127,23 @@ class Settings(BaseSettings):
     def group_trigger_name_list(self) -> list[str]:
         return [n.strip() for n in self.group_trigger_names.split(",") if n.strip()]
 
+    # QQ 空间说说：她自己决定发，一天 1~3 条
+    qzone_enabled: bool = False
+    qzone_daily_max: int = 3
+    qzone_min_gap_minutes: int = 120
+    qzone_max_chars: int = 100
+    # 1 所有人可见 / 4 好友可见 / 64 仅自己可见
+    qzone_visibility: int = 1
+    qzone_fallback_hour: int = 20
+    qzone_fallback_minute: int = 0
+    qzone_history: int = 5
+
+    # 个性签名：每天定时换一次
+    signature_enabled: bool = False
+    signature_hour: int = 9
+    signature_minute: int = 0
+    signature_max_chars: int = 30
+
     # 主动开口
     proactive_enabled: bool = True
     proactive_check_minutes: int = 10

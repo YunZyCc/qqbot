@@ -428,6 +428,11 @@ async def build_reply_messages(
             "如果你在对话历史里说过自己不能联网，那是升级前的旧状态，别当真。"
             "对方发链接让你看，用 web_fetch 抓正文。"
         )
+    if getattr(settings, "qzone_enabled", False):
+        hints.append(
+            "想发 QQ 空间说说就调用 post_qzone 工具，内容直接写在参数里一次发出去。"
+            "对方让你发说说时，必须真的调用，不能嘴上答应或者先念内容。"
+        )
     tools_hint = "\n".join(hints)
 
     return ctx.prompt.compose(

@@ -145,6 +145,16 @@ CREATE TABLE IF NOT EXISTS settings (
     v TEXT NOT NULL
 );
 
+-- 发出去的社会化内容：说说、签名。用来限额、防重复、查历史
+CREATE TABLE IF NOT EXISTS social_posts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    tid        TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'ok',
+    created_at REAL NOT NULL
+);
+
 -- 群成员：按群隔离，记住群里出现过谁；不跨群共享
 CREATE TABLE IF NOT EXISTS group_members (
     group_id   INTEGER NOT NULL,
@@ -273,7 +283,7 @@ class Store:
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
         # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
-        await self.set_setting("schema_version", "7")
+        await self.set_setting("schema_version", "8")
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -765,6 +775,36 @@ class Store:
         )
         await self.db.commit()
         return cur.rowcount
+
+    # ---------- 说说 / 签名 ----------
+    async def add_social_post(
+        self, kind: str, content: str, tid: str = "", status: str = "ok"
+    ) -> int:
+        cur = await self.db.execute(
+            "INSERT INTO social_posts(kind, content, tid, status, created_at)"
+            " VALUES(?,?,?,?,?)",
+            (kind, content, tid, status, time.time()),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid or 0)
+
+    async def recent_social_posts(self, kind: str, limit: int = 5) -> list[dict]:
+        cur = await self.db.execute(
+            "SELECT * FROM social_posts WHERE kind=? AND status='ok'"
+            " ORDER BY id DESC LIMIT ?",
+            (kind, limit),
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    async def social_posts_today(self, kind: str) -> list[dict]:
+        start = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+        cur = await self.db.execute(
+            "SELECT * FROM social_posts WHERE kind=? AND status='ok' AND created_at>=?"
+            " ORDER BY id DESC",
+            (kind, start),
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
     # ---------- 群成员 ----------
     async def touch_group_member(
