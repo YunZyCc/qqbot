@@ -122,9 +122,13 @@ def split_reply(
     if len(expanded) > target:
         expanded = _merge_tail(expanded, target, segment_max_chars)
 
-    # 兜底：合并后仍可能超过硬上限
+    # 硬上限：宁可最后一条长一点，也不能发出去 9 条（之前 max_segments 被 _merge_tail 绕过了）
     if len(expanded) > max_segments:
-        expanded = _merge_tail(expanded, max_segments, segment_max_chars)
+        head = expanded[: max_segments - 1]
+        merged_tail = ""
+        for piece in expanded[max_segments - 1:]:
+            merged_tail = _join_pieces(merged_tail, piece)
+        expanded = head + ([merged_tail] if merged_tail else [])
 
     return [piece for piece in expanded if piece.strip()]
 

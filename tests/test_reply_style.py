@@ -151,3 +151,10 @@ def test_merge_keeps_existing_punct():
     from qqbot.core.reply_style import _join_pieces
 
     assert _join_pieces("先这样。", "明天再说") == "先这样。明天再说"
+
+
+def test_max_segments_is_hard_even_when_pieces_long():
+    """637 字的日记被切成 9 段发出去过；硬上限必须生效，宁可最后一条长。"""
+    text = "这是一段很长的内容，" * 80  # 约 800 字，切完远超 5 段
+    parts = split_reply(text, 5, 100, [100, 0, 0, 0, 0], merge_under=0)
+    assert len(parts) <= 5
