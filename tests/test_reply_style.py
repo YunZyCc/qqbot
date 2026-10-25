@@ -164,3 +164,29 @@ def test_max_segments_is_hard_even_when_pieces_long():
     text = "这是一段很长的内容，" * 80  # 约 800 字，切完远超 5 段
     parts = split_reply(text, 5, 100, [100, 0, 0, 0, 0])
     assert len(parts) <= 5
+
+
+def test_blank_line_used_as_separator():
+    """模型有时用空行分段，要当成 ||| 处理，别把空行发出去。"""
+    from qqbot.core.reply_style import split_reply
+
+    text = "真的呀|||先练练怎么打招呼\n\n我这嘴没把门的|||你帮我看着点"
+    parts = split_reply(text, 5, 0, target_segments=3)
+    assert parts == ["真的呀", "先练练怎么打招呼", "我这嘴没把门的，你帮我看着点"]
+    assert all("\n" not in p for p in parts)
+
+
+def test_single_newline_becomes_space():
+    from qqbot.core.reply_style import split_reply
+
+    parts = split_reply("第一行\n第二行", 5, 0, target_segments=1)
+    assert parts == ["第一行 第二行"]
+
+
+def test_verbatim_keeps_newlines():
+    """念日记、贴代码时换行要原样保留。"""
+    from qqbot.core.reply_style import split_reply
+
+    text = "```\nline1\nline2\n```"
+    parts = split_reply(text, 5, 0, verbatim=True)
+    assert parts and "\n" in parts[0]

@@ -99,6 +99,12 @@ def split_reply(
     if not text:
         return []
 
+    # 模型有时用空行代替 ||| 分段，也有时在段内插一个换行，
+    # 这些都会让 QQ 里出现难看的空行，先统一处理掉
+    if not verbatim:
+        text = re.sub(r"\n\s*\n+", delimiter, text)
+        text = re.sub(r"\s*\n\s*", " ", text)
+
     parts = [p.strip() for p in text.split(delimiter) if p.strip()]
     if not parts:
         parts = [text]
