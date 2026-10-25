@@ -120,3 +120,34 @@ def test_long_reply_still_splits():
     long_text = "这部分内容比较长，" * 8 + "|||" + "另一段也比较长，" * 8
     parts = split_reply(long_text, 5, 100, [0, 100, 0, 0, 0], merge_under=60)
     assert len(parts) == 2
+
+
+def test_merge_uses_period_before_question():
+    """「在呢，一直没走」+「怎么了，比赛出事了？」应该是两句，不是逗号硬连。"""
+    from qqbot.core.reply_style import _join_pieces
+
+    merged = _join_pieces("在呢，一直没走", "怎么了，比赛出事了？")
+    assert merged == "在呢，一直没走。怎么了，比赛出事了？"
+
+
+def test_merge_uses_period_after_sentence_tail():
+    from qqbot.core.reply_style import _join_pieces
+
+    assert _join_pieces("行啊，加上吧", "那你现在知道几点了不") == (
+        "行啊，加上吧。那你现在知道几点了不"
+    )
+
+
+def test_merge_uses_comma_for_connective():
+    from qqbot.core.reply_style import _join_pieces
+
+    assert _join_pieces("今天等你消息", "说真的就这点事") == (
+        "今天等你消息，说真的就这点事"
+    )
+    assert _join_pieces("我不困", "但其实快睡着了") == "我不困，但其实快睡着了"
+
+
+def test_merge_keeps_existing_punct():
+    from qqbot.core.reply_style import _join_pieces
+
+    assert _join_pieces("先这样。", "明天再说") == "先这样。明天再说"

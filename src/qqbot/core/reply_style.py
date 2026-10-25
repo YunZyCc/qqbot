@@ -22,16 +22,33 @@ def _pick_segment_count(weights: list[float] | None, max_segments: int) -> int:
 
 
 _PUNCT_TAIL = "。！？!?，,、；;：:…~～"
+# 右边以这些词开头，说明是同一句话的续接，用逗号
+_CONNECTIVES = (
+    "但", "不过", "可是", "然后", "而且", "所以", "因为", "其实",
+    "就是", "还", "也", "再", "又", "才", "就", "而且",
+)
+# 左边以这些字收尾，说明已经是一个完整的句子，用句号
+_SENTENCE_TAILS = ("吧", "了", "呢", "啊", "哦", "嘛", "呀", "哈", "啦")
 
 
 def _join_pieces(left: str, right: str) -> str:
-    """拼接两条消息；前一条没有标点收尾就补个逗号，避免「电子茶说真的」这种粘连。"""
+    """把两条待合并的消息接起来，按语义补标点，避免「A，B」硬连成一句。
+
+    - 左句已经收尾（吧/了/呢…）或是独立的疑问句 → 用句号断开
+    - 右边是连接词起头的续接 → 用逗号
+    """
     if not left:
         return right
     if not right:
         return left
     if left[-1] in _PUNCT_TAIL:
         return left + right
+    if "？" in right or "?" in right:
+        return left + "。" + right
+    if right.startswith(_CONNECTIVES):
+        return left + "，" + right
+    if left.endswith(_SENTENCE_TAILS):
+        return left + "。" + right
     return left + "，" + right
 
 

@@ -11,7 +11,8 @@ REPLY_RULES = """输出要求：
 - 真的还有话要说、或者想换个语气补一句，才用 ||| 再加一条。
 - 偶尔连发 3~4 条，连发五条很少见——别每次都炸一串。
 - 不要 Markdown、不要列表、不要标题、不要加粗。
-- 不要每句都反问，不要客服腔。
+- **一段里最多一个问号。** 别每句都用问句结尾，连着两轮更不行。
+- 不要客服腔。
 - 对方要表情包、或者你想用表情包回应时，调用 send_sticker 工具直接发，不要只说「给你发一个」。"""
 
 
@@ -85,7 +86,27 @@ def evolution_section(ctx: PromptContext) -> str:
 def time_section(ctx: PromptContext) -> str:
     """模型不知道今天是几号，就理解不了「最近」「今天」，搜索结果的时效也判断不了。"""
     now = dt.datetime.now()
-    return f"现在是 {now:%Y-%m-%d} 周{_WEEKDAYS[now.weekday()]} {now:%H:%M}。"
+    period = _period_of_day(now.hour)
+    return (
+        f"现在是 {now:%Y-%m-%d} 周{_WEEKDAYS[now.weekday()]} {now:%H:%M}（{period}）。"
+        "看着时间说话：大白天别劝人睡觉，后半夜别劝人再玩会儿。"
+    )
+
+
+def _period_of_day(hour: int) -> str:
+    if hour < 5:
+        return "后半夜"
+    if hour < 9:
+        return "清早"
+    if hour < 12:
+        return "上午"
+    if hour < 14:
+        return "中午"
+    if hour < 18:
+        return "下午"
+    if hour < 23:
+        return "晚上"
+    return "深夜"
 
 
 def self_section(ctx: PromptContext) -> str:
