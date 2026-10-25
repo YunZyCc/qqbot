@@ -129,11 +129,14 @@ class Settings(BaseSettings):
 
     # QQ 空间说说：她自己决定发，一天 1~3 条
     qzone_enabled: bool = False
-    qzone_daily_max: int = 3
-    qzone_min_gap_minutes: int = 120
+    # 0 = 不限条数 / 不限间隔，想发就发
+    qzone_daily_max: int = 0
+    qzone_min_gap_minutes: int = 0
     qzone_max_chars: int = 100
     # 1 所有人可见 / 4 好友可见 / 64 仅自己可见
     qzone_visibility: int = 1
+    # 当天一条都没发时补一条；她完全自主时可以关掉
+    qzone_fallback_enabled: bool = False
     qzone_fallback_hour: int = 20
     qzone_fallback_minute: int = 0
     qzone_history: int = 5
@@ -143,6 +146,7 @@ class Settings(BaseSettings):
     signature_hour: int = 9
     signature_minute: int = 0
     signature_max_chars: int = 30
+    signature_daily_max: int = 0   # 0 = 不限
 
     # 主动开口
     proactive_enabled: bool = True

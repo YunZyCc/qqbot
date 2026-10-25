@@ -201,12 +201,22 @@ async def test_post_qzone_rejects_private_content(tmp_path):
 
 
 async def test_post_qzone_quota_blocked(tmp_path):
-    ctx, store = await _ctx(tmp_path)
+    """限额配了才拦；默认 0 表示不限，想发就发。"""
+    ctx, store = await _ctx(tmp_path, qzone_daily_max=3)
     for index in range(3):
         await store.add_social_post(QZONE, f"第{index}条")
     result = await post_qzone(ctx, "今天风挺大的")
     assert "够了" in result
     assert ctx.api.calls == []
+    await store.close()
+
+
+async def test_post_qzone_unlimited_by_default(tmp_path):
+    ctx, store = await _ctx(tmp_path)
+    for index in range(5):
+        await store.add_social_post(QZONE, f"第{index}条")
+    result = await post_qzone(ctx, "今天风挺大的")
+    assert "已经发到空间了" in result
     await store.close()
 
 

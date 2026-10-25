@@ -194,30 +194,52 @@ class PostQzoneParams(BaseModel):
     content: str
 
 
+class UpdateSignatureParams(BaseModel):
+    content: str
+
+
 def _register_qzone_tool(registry: ToolRegistry, ctx) -> None:
-    """说说工具：只有开了 qzone 才注册，免得没配好的时候模型瞎调。"""
-    if not getattr(ctx.settings, "qzone_enabled", False):
-        return
+    """说说和签名工具：开了对应功能才注册。"""
+    if getattr(ctx.settings, "qzone_enabled", False):
 
-    async def post_qzone(content: str) -> str:
-        from ..memory.social import post_qzone as _post
+        async def post_qzone(content: str) -> str:
+            from ..memory.social import post_qzone as _post
 
-        return await _post(ctx, content)
+            return await _post(ctx, content)
 
-    registry.register(
-        Tool(
-            name="post_qzone",
-            description=(
-                "发一条 QQ 空间说说，好友都能看到。"
-                "想分享一件事、一句心情、一个观察时就发，一天最多 3 次。"
-                "对方让你发说说时，必须真的调用这个工具发出去，"
-                "不能只说「我写了」「写点啥呢」就算完。"
-                "发完不用在聊天里特意宣布。"
-            ),
-            params=PostQzoneParams,
-            handler=post_qzone,
+        registry.register(
+            Tool(
+                name="post_qzone",
+                description=(
+                    "发一条 QQ 空间说说，好友都能看到。"
+                    "想分享一件事、一句心情、一个观察时就发，想发就发，没有条数限制。"
+                    "对方让你发说说时，必须真的调用这个工具发出去，"
+                    "不能只说「我写了」「写点啥呢」就算完。"
+                    "发完不用在聊天里特意宣布。"
+                ),
+                params=PostQzoneParams,
+                handler=post_qzone,
+            )
         )
-    )
+
+    if getattr(ctx.settings, "signature_enabled", False):
+
+        async def update_signature(content: str) -> str:
+            from ..memory.social import change_signature as _change
+
+            return await _change(ctx, content)
+
+        registry.register(
+            Tool(
+                name="update_signature",
+                description=(
+                    "换掉你的 QQ 个性签名。想换就换，没有次数限制。"
+                    "一句话，短、留白、有点你自己的味道。"
+                ),
+                params=UpdateSignatureParams,
+                handler=update_signature,
+            )
+        )
 
 
 def _register_search_tools(registry: ToolRegistry, ctx) -> None:

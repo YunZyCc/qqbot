@@ -21,6 +21,9 @@ class QzoneModule:
         if not settings.qzone_enabled:
             log.info("说说功能已关闭")
             return
+        if not settings.qzone_fallback_enabled:
+            log.info("说说兜底已关闭，完全由她自己决定发不发")
+            return
         ctx.scheduler.cron(
             f"{settings.qzone_fallback_minute} {settings.qzone_fallback_hour} * * *",
             self.daily_fallback,

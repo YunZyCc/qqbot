@@ -431,6 +431,7 @@ async def build_reply_messages(
     if getattr(settings, "qzone_enabled", False):
         hints.append(
             "想发 QQ 空间说说就调用 post_qzone 工具，内容直接写在参数里一次发出去。"
+            "想换个性签名就调用 update_signature。两个都是想用就用，没有次数限制。"
             "对方让你发说说时，必须真的调用，不能嘴上答应或者先念内容。"
         )
     tools_hint = "\n".join(hints)

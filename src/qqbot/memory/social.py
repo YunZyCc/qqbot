@@ -121,11 +121,17 @@ async def build_history(store: Store, kind: str, limit: int = 5) -> str:
 async def check_quota(
     store: Store, kind: str, daily_max: int, min_gap_minutes: int
 ) -> str | None:
-    """能不能发。返回拒绝原因，None 表示可以。"""
+    """能不能发。返回拒绝原因，None 表示可以。
+
+    daily_max <= 0 表示不限条数，min_gap_minutes <= 0 表示不限间隔。
+    """
+    if daily_max <= 0 and min_gap_minutes <= 0:
+        return None
+
     today = await store.social_posts_today(kind)
-    if len(today) >= daily_max:
+    if daily_max > 0 and len(today) >= daily_max:
         return f"今天已经发了 {len(today)} 条，够了"
-    if today and min_gap_minutes > 0:
+    if min_gap_minutes > 0 and today:
         last = float(today[0]["created_at"])
         wait = min_gap_minutes * 60 - (time.time() - last)
         if wait > 0:
@@ -222,7 +228,9 @@ async def rotate_signature(ctx) -> bool:
     settings = ctx.settings
     if not settings.signature_enabled:
         return False
-    reason = await check_quota(ctx.store, SIGNATURE, 1, 0)
+    reason = await check_quota(
+        ctx.store, SIGNATURE, settings.signature_daily_max, 0
+    )
     if reason:
         return False
 
@@ -231,6 +239,30 @@ async def rotate_signature(ctx) -> bool:
         return False
     ok, _ = await publish(ctx, SIGNATURE, content)
     return ok
+
+
+async def change_signature(ctx, content: str) -> str:
+    """工具入口：她自己想换签名时调。"""
+    settings = ctx.settings
+    if not settings.signature_enabled:
+        return "现在没开这个功能"
+
+    reason = await check_quota(
+        ctx.store, SIGNATURE, settings.signature_daily_max, 0
+    )
+    if reason:
+        return reason
+
+    cleaned = clean_content(content, settings.signature_max_chars)
+    if not cleaned:
+        return "签名是空的，没换"
+    if leaks_private(cleaned):
+        return "这句里提到了私聊里的事，换个说法"
+
+    ok, _ = await publish(ctx, SIGNATURE, cleaned)
+    if ok:
+        return f"签名换成「{cleaned}」了"
+    return "签名没换成，等会儿再说吧"
 
 
 async def fallback_qzone(ctx) -> bool:
