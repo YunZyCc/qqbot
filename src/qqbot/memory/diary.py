@@ -10,9 +10,9 @@ from .store import Store
 
 log = logging.getLogger(__name__)
 
-DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「小毒」。
+DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「周周」。
 今天是 {date}。
-今天和对方聊了这些：
+今天和{who}聊了这些：
 {conversation}
 
 要求：
@@ -23,7 +23,7 @@ DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 
 - 输出 JSON：{{"text": "...", "mood": "一个词", "highlights": ["要点1", "要点2"]}}
 只输出 JSON。"""
 
-DIARY_SOLO_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「小毒」。
+DIARY_SOLO_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「周周」。
 今天是 {date}。
 今天对方没有来找我。
 
@@ -59,22 +59,35 @@ def _parse_diary(text: str) -> dict | None:
     return None
 
 
-async def generate_diary(store: Store, chat: ChatClient, day: dt.date) -> bool:
-    """生成某一天的日记；已存在则跳过。有对话写回顾式，没有写独处式。"""
-    if await store.get_diary(day.isoformat()):
+async def generate_diary(
+    store: Store,
+    chat: ChatClient,
+    day: dt.date,
+    scope: str,
+    who: str = "对方",
+    allow_solo: bool = True,
+) -> bool:
+    """给某个 scope 生成某一天的日记。
+
+    有对话写回顾式；没对话时只有 allow_solo 才写独处式——
+    独处日记属于「她自己的生活」，只给主人写，不然给每个好友都写一篇会很怪。
+    """
+    if await store.get_diary(day.isoformat(), scope):
         return False
 
     start, end = day_range(day)
-    messages = await store.messages_between(start, end)
+    messages = await store.messages_between(start, end, scope)
     has_chat = bool(messages)
+    if not has_chat and not allow_solo:
+        return False
 
     if has_chat:
         lines = []
         for m in messages[-80:]:
-            speaker = "对方" if m["role"] == "user" else "我"
+            speaker = who if m["role"] == "user" else "我"
             lines.append(f"{speaker}: {m['content']}")
         prompt = DIARY_REVIEW_PROMPT.format(
-            date=day.isoformat(), conversation="\n".join(lines)[-6000:]
+            date=day.isoformat(), conversation="\n".join(lines)[-6000:], who=who
         )
     else:
         prompt = DIARY_SOLO_PROMPT.format(date=day.isoformat())
@@ -99,10 +112,12 @@ async def generate_diary(store: Store, chat: ChatClient, day: dt.date) -> bool:
         mood=str(parsed.get("mood") or "")[:20],
         highlights=json.dumps(parsed.get("highlights") or [], ensure_ascii=False),
         source_msg_count=len(messages),
+        scope=scope,
     )
     log.info(
-        "已写日记 %s（%s模式，%s 字）",
+        "已写日记 %s（%s，%s模式，%s 字）",
         day,
+        scope,
         "回顾" if has_chat else "独处",
         len(str(parsed["text"])),
     )
@@ -110,15 +125,27 @@ async def generate_diary(store: Store, chat: ChatClient, day: dt.date) -> bool:
 
 
 async def backfill_diaries(
-    store: Store, chat: ChatClient, latest_day: dt.date, days: int = 7
+    store: Store,
+    chat: ChatClient,
+    latest_day: dt.date,
+    days: int = 7,
+    targets: list[tuple[str, str, bool]] | None = None,
 ) -> int:
-    """从 latest_day 往前补 days 天，缺哪天补哪天；不要求当天有对话。"""
+    """从 latest_day 往前补 days 天。
+
+    targets 是 (scope, 称呼, 是否允许写独处日记) 的列表；
+    不传就只给主人补（scope=None 时用 store 的 default_scope）。
+    """
+    if targets is None:
+        targets = [(store.default_scope, "对方", True)]
+
     written = 0
     for offset in range(1, days + 1):
         day = latest_day - dt.timedelta(days=offset)
-        try:
-            if await generate_diary(store, chat, day):
-                written += 1
-        except Exception:
-            log.exception("补写日记失败（%s）", day)
+        for scope, who, allow_solo in targets:
+            try:
+                if await generate_diary(store, chat, day, scope, who, allow_solo):
+                    written += 1
+            except Exception:
+                log.exception("补写日记失败（%s / %s）", day, scope)
     return written

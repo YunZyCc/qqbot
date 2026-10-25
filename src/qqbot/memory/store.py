@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import aiosqlite
 
 from .base import MemoryItem
 from .retrieve import retrieve
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -98,13 +101,14 @@ CREATE TABLE IF NOT EXISTS episodes (
 );
 
 CREATE TABLE IF NOT EXISTS diaries (
-    date             TEXT PRIMARY KEY,
+    date             TEXT NOT NULL,
     scope            TEXT NOT NULL DEFAULT 'bot:self',
     text             TEXT NOT NULL,
     mood             TEXT NOT NULL DEFAULT '',
     highlights       TEXT NOT NULL DEFAULT '',
     source_msg_count INTEGER NOT NULL DEFAULT 0,
-    created_at       REAL NOT NULL
+    created_at       REAL NOT NULL,
+    PRIMARY KEY(date, scope)
 );
 
 CREATE TABLE IF NOT EXISTS embeddings (
@@ -282,8 +286,43 @@ class Store:
         # v6：facts.source 从 'extract' 细分成 fact / focus
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
+        # v9：日记按人拆，主键从 date 改成 (date, scope)
+        await self._migrate_diaries()
+
         # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
-        await self.set_setting("schema_version", "8")
+        await self.set_setting("schema_version", "9")
+
+    async def _migrate_diaries(self) -> bool:
+        """旧库的 diaries 主键只有 date，改成 (date, scope)；旧数据归给主人。"""
+        cur = await self.db.execute("PRAGMA table_info(diaries)")
+        columns = await cur.fetchall()
+        primary = [row["name"] for row in columns if row["pk"]]
+        if primary != ["date"]:
+            return False
+
+        log.info("迁移 diaries 主键为 (date, scope)，旧日记归到 %s", self.default_scope)
+        await self.db.executescript(
+            f"""
+            CREATE TABLE diaries_v9 (
+                date             TEXT NOT NULL,
+                scope            TEXT NOT NULL DEFAULT 'bot:self',
+                text             TEXT NOT NULL,
+                mood             TEXT NOT NULL DEFAULT '',
+                highlights       TEXT NOT NULL DEFAULT '',
+                source_msg_count INTEGER NOT NULL DEFAULT 0,
+                created_at       REAL NOT NULL,
+                PRIMARY KEY(date, scope)
+            );
+            INSERT INTO diaries_v9(date, scope, text, mood, highlights, source_msg_count, created_at)
+                SELECT date, CASE WHEN scope='bot:self' OR scope='' THEN '{self.default_scope}' ELSE scope END,
+                       text, mood, highlights, source_msg_count, created_at
+                FROM diaries;
+            DROP TABLE diaries;
+            ALTER TABLE diaries_v9 RENAME TO diaries;
+            """
+        )
+        await self.db.commit()
+        return True
 
     async def _ensure_indexes(self) -> None:
         await self.db.executescript(INDEXES)
@@ -555,8 +594,15 @@ class Store:
         return [dict(r) for r in reversed(rows)]
 
     # ---------- diaries ----------
-    async def get_diary(self, date: str) -> dict | None:
-        cur = await self.db.execute("SELECT * FROM diaries WHERE date=?", (date,))
+    async def get_diary(self, date: str, scope: str = "") -> dict | None:
+        if scope:
+            cur = await self.db.execute(
+                "SELECT * FROM diaries WHERE date=? AND scope=?", (date, scope)
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM diaries WHERE date=? ORDER BY scope LIMIT 1", (date,)
+            )
         row = await cur.fetchone()
         return dict(row) if row else None
 
@@ -572,28 +618,44 @@ class Store:
         await self.db.execute(
             "INSERT INTO diaries(date, scope, text, mood, highlights, source_msg_count,"
             " created_at) VALUES(?,?,?,?,?,?,?)"
-            " ON CONFLICT(date) DO UPDATE SET scope=excluded.scope, text=excluded.text,"
+            " ON CONFLICT(date, scope) DO UPDATE SET text=excluded.text,"
             " mood=excluded.mood, highlights=excluded.highlights,"
             " source_msg_count=excluded.source_msg_count, created_at=excluded.created_at",
             (date, scope, text, mood, highlights, source_msg_count, time.time()),
         )
         await self.db.commit()
 
-    async def recent_diaries(self, limit: int = 3, before: str | None = None) -> list[dict]:
+    async def recent_diaries(
+        self, limit: int = 3, scope: str = "", before: str | None = None
+    ) -> list[dict]:
+        """只取某个 scope 的日记；不传 scope 才跨人取（后台统计用）。"""
+        sql = "SELECT * FROM diaries"
+        clauses: list[str] = []
+        params: list = []
+        if scope:
+            clauses.append("scope=?")
+            params.append(scope)
         if before:
-            cur = await self.db.execute(
-                "SELECT * FROM diaries WHERE date < ? ORDER BY date DESC LIMIT ?",
-                (before, limit),
-            )
-        else:
-            cur = await self.db.execute(
-                "SELECT * FROM diaries ORDER BY date DESC LIMIT ?", (limit,)
-            )
+            clauses.append("date < ?")
+            params.append(before)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY date DESC LIMIT ?"
+        params.append(limit)
+
+        cur = await self.db.execute(sql, params)
         rows = await cur.fetchall()
         return [dict(r) for r in reversed(rows)]
 
-    async def diary_dates_since(self, since: str) -> set[str]:
-        cur = await self.db.execute("SELECT date FROM diaries WHERE date >= ?", (since,))
+    async def diary_dates_since(self, since: str, scope: str = "") -> set[str]:
+        if scope:
+            cur = await self.db.execute(
+                "SELECT date FROM diaries WHERE date >= ? AND scope=?", (since, scope)
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT date FROM diaries WHERE date >= ?", (since,)
+            )
         return {row["date"] for row in await cur.fetchall()}
 
     # ---------- embeddings ----------

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     growth_enabled: bool = True
     growth_every: int = 10
     growth_promote_after: int = 3
-    daily_token_budget: int = 200_000
+    daily_token_budget: int = 500_000
     request_timeout: float = 60.0
 
     # 日记
@@ -90,6 +90,22 @@ class Settings(BaseSettings):
             if value > 0:
                 items.append(value)
         return items or [30.0, 22.0, 18.0, 18.0, 12.0]
+
+    # 好友白名单：逗号分隔的 QQ 号。你在 QQ 客户端自己加好友，加完把号填这里
+    friend_whitelist: str = ""
+
+    @property
+    def friend_whitelist_ids(self) -> list[int]:
+        ids: list[int] = []
+        for piece in self.friend_whitelist.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                ids.append(int(piece))
+            except ValueError:
+                continue
+        return ids
 
     # 群聊：记录按 group:<群号> 隔离，不跟私聊混
     group_enabled: bool = True

@@ -88,7 +88,12 @@ def build_policy(settings: Settings) -> SessionPolicy:
         log.warning("群聊已启用但白名单为空，收到群消息只打日志不回复")
     else:
         log.info("群聊已启用，白名单群：%s", "、".join(str(g) for g in groups))
-    return OwnerAndGroupPolicy(settings.owner_qq, settings.bot_qq, groups)
+    friends = settings.friend_whitelist_ids
+    if friends:
+        log.info("好友白名单：%s", "、".join(str(f) for f in friends))
+    return OwnerAndGroupPolicy(
+        settings.owner_qq, settings.bot_qq, groups, friends
+    )
 
 
 async def build_embedding(settings: Settings):

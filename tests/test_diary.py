@@ -41,7 +41,7 @@ async def test_review_diary_with_messages(tmp_path):
     await _seed_message(store, "private:1", start + 3600, "在吗")
 
     chat = FakeChat(DIARY_JSON)
-    assert await generate_diary(store, chat, yesterday) is True
+    assert await generate_diary(store, chat, yesterday, 'private:1') is True
 
     diary = await store.get_diary(yesterday.isoformat())
     assert diary is not None
@@ -55,7 +55,7 @@ async def test_solo_diary_without_messages(tmp_path):
     yesterday = dt.date.today() - dt.timedelta(days=1)
     chat = FakeChat(DIARY_JSON)
 
-    assert await generate_diary(store, chat, yesterday) is True
+    assert await generate_diary(store, chat, yesterday, 'private:1') is True
     diary = await store.get_diary(yesterday.isoformat())
     assert diary is not None
     assert diary["source_msg_count"] == 0
@@ -69,8 +69,8 @@ async def test_generate_is_idempotent(tmp_path):
     yesterday = dt.date.today() - dt.timedelta(days=1)
     chat = FakeChat(DIARY_JSON)
 
-    assert await generate_diary(store, chat, yesterday) is True
-    assert await generate_diary(store, chat, yesterday) is False
+    assert await generate_diary(store, chat, yesterday, 'private:1') is True
+    assert await generate_diary(store, chat, yesterday, 'private:1') is False
     await store.close()
 
 

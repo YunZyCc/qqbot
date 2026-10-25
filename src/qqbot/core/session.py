@@ -63,16 +63,20 @@ class OwnerAndGroupPolicy:
         owner_qq: int,
         bot_qq: int = 0,
         groups: Iterable[int] = (),
+        friends: Iterable[int] = (),
     ) -> None:
         self.owner_qq = owner_qq
         self.bot_qq = bot_qq
         self.groups = {int(g) for g in groups if g}
+        self.friends = {int(f) for f in friends if f and int(f) != owner_qq}
 
     async def should_respond(self, ev: Event) -> bool:
         if ev.kind is not EventKind.MESSAGE:
             return False
         if ev.message_type == "private":
-            return ev.sender_id == self.owner_qq
+            return (
+                ev.sender_id == self.owner_qq or ev.sender_id in self.friends
+            )
         if ev.message_type == "group":
             return self.group_allowed(ev.group_id)
         return False

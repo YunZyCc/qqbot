@@ -10,6 +10,7 @@ def test_section_order():
     assert composer.sections() == [
         "persona",
         "chatroom",
+        "identity",
         "evolution",
         "time",
         "self",

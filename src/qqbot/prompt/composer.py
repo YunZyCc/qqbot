@@ -9,6 +9,7 @@ class PromptContext:
     persona: str = ""
     evolution: list[dict] = field(default_factory=list)
     chatroom: dict | None = None
+    dm_identity: dict | None = None
     summary: str = ""
     facts: list[dict] = field(default_factory=list)
     episodes: list[dict] = field(default_factory=list)

@@ -30,6 +30,16 @@ class DiaryModule:
         asyncio.create_task(self._bootstrap())
         log.info("diary 模块已启用（每日 %02d:%02d 写日记）", settings.diary_hour, settings.diary_minute)
 
+    def _targets(self) -> list[tuple[str, str, bool]]:
+        """要写日记的 scope：主人必写（含独处），好友只在当天聊过才写。"""
+        settings = self.ctx.settings
+        targets: list[tuple[str, str, bool]] = [
+            (f"private:{settings.owner_qq}", "对方", True)
+        ]
+        for qq in settings.friend_whitelist_ids:
+            targets.append((f"private:{qq}", "对方", False))
+        return targets
+
     async def _bootstrap(self) -> None:
         await asyncio.sleep(3)
         settings = self.ctx.settings
@@ -39,6 +49,7 @@ class DiaryModule:
                 self.ctx.llm,
                 dt.date.today(),
                 settings.diary_backfill_days,
+                self._targets(),
             )
             if written:
                 log.info("启动补写日记 %s 篇", written)
@@ -49,7 +60,10 @@ class DiaryModule:
 
     async def write_yesterday(self) -> None:
         day = dt.date.today() - dt.timedelta(days=1)
-        try:
-            await generate_diary(self.ctx.store, self.ctx.llm, day)
-        except Exception:
-            log.exception("每日日记生成失败")
+        for scope, who, allow_solo in self._targets():
+            try:
+                await generate_diary(
+                    self.ctx.store, self.ctx.llm, day, scope, who, allow_solo
+                )
+            except Exception:
+                log.exception("每日日记生成失败（%s）", scope)

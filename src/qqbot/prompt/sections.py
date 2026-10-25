@@ -70,6 +70,21 @@ def persona_section(ctx: PromptContext) -> str:
 _WEEKDAYS = "一二三四五六日"
 
 
+def identity_section(ctx: PromptContext) -> str:
+    """私聊时告诉她现在在跟谁说话、什么关系、什么不能提。群聊用另一个段。"""
+    info = ctx.dm_identity or {}
+    if not info:
+        return ""
+    name = info.get("name") or "对方"
+    qq = info.get("qq") or ""
+    role = "你的主人" if info.get("is_owner") else "你的朋友"
+    return (
+        f"你现在是在和「{name}」（QQ {qq}）私聊。他是{role}。\n\n"
+        "你只记得和他之间发生的事。别人跟你说过什么、你和别人聊过什么，"
+        "一个字都不能说给他听，也不能暗示。"
+    )
+
+
 def evolution_section(ctx: PromptContext) -> str:
     """人格成长层：她自己长出来的变化，跟骨架分开放。"""
     if not ctx.evolution:
@@ -224,6 +239,7 @@ def build_default_composer() -> PromptComposer:
     composer = PromptComposer()
     composer.register("persona", persona_section)
     composer.register("chatroom", chatroom_section)
+    composer.register("identity", identity_section)
     composer.register("evolution", evolution_section)
     composer.register("time", time_section)
     composer.register("self", self_section)

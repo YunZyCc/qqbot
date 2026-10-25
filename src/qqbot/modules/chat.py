@@ -233,8 +233,10 @@ class ChatModule:
         if settings.reply_delay_enabled:
             await asyncio.sleep(reply_delay(settings))
 
+        # 只跟自己 scope 的日记比对，别拿别人的日记判断「是不是在念原文」
         diary_texts = [
-            row["text"] for row in await ctx.store.recent_diaries(3)
+            row["text"]
+            for row in await ctx.store.recent_diaries(3, scope=scope)
         ]
         verbatim = _looks_verbatim(reply_text, diary_texts)
         if verbatim:
@@ -400,6 +402,7 @@ async def build_reply_messages(
         await active_traits(ctx.store) if settings.growth_enabled else []
     )
     chatroom = await _build_chatroom(ctx, scope, sender)
+    dm_identity = await _build_dm_identity(ctx, scope, sender)
 
     rolling = await ctx.store.latest_summary(scope, "rolling")
     session = await ctx.store.latest_summary(scope, "session")
@@ -410,7 +413,9 @@ async def build_reply_messages(
         summary_parts.append("最近：" + session["text"])
     summary = "\n".join(summary_parts)
 
-    diaries = await ctx.store.recent_diaries(settings.diary_prompt_days)
+    diaries = await ctx.store.recent_diaries(
+        settings.diary_prompt_days, scope=scope
+    )
     diary_text = "\n\n".join(f"{d['date']}：{d['text'][:200]}" for d in diaries)
 
     recent_images = await ctx.store.recent_images(scope, 3)
@@ -448,6 +453,7 @@ async def build_reply_messages(
             persona=ctx.persona,
             evolution=evolution,
             chatroom=chatroom,
+            dm_identity=dm_identity,
             summary=summary,
             facts=facts,
             episodes=episodes,
@@ -478,6 +484,26 @@ def _looks_verbatim(reply_text: str, diary_texts: list[str]) -> bool:
         if reply_text[index:index + window] in joined:
             return True
     return False
+
+
+async def _build_dm_identity(ctx, scope: str, sender: int) -> dict | None:
+    """私聊时告诉模型当前对话对象；群聊返回 None（群有自己的段）。"""
+    if scope.startswith("group:"):
+        return None
+    name = ""
+    try:
+        contact = await ctx.contacts.get_contact(sender)
+        if contact:
+            name = str(contact.get("remark") or contact.get("nickname") or "")
+    except Exception:
+        log.warning("读取联系人失败（%s）", sender, exc_info=True)
+
+    is_owner = False
+    policy = getattr(ctx, "policy", None)
+    if policy is not None and hasattr(policy, "is_owner"):
+        is_owner = policy.is_owner(sender)
+
+    return {"qq": sender, "name": name or str(sender), "is_owner": is_owner}
 
 
 async def _build_chatroom(ctx, scope: str, sender: int) -> dict | None:
