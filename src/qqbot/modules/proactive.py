@@ -43,6 +43,12 @@ class ProactiveModule:
         settings = ctx.settings
         now = time.time()
         today = dt.date.today().isoformat()
+        scope = f"private:{settings.owner_qq}"
+
+        # 服务刚启动时内存里的计时是 0，从库里把最后一条用户消息捞回来
+        # 否则 idle 恒为 0，主动消息永远等不到阈值
+        if not ctx.last_user_at:
+            ctx.last_user_at = await ctx.store.last_message_ts(scope, "user")
 
         hour = dt.datetime.now().hour
         if settings.proactive_quiet_start <= hour < settings.proactive_quiet_end:
@@ -78,7 +84,6 @@ class ProactiveModule:
         if not text:
             return
 
-        scope = f"private:{settings.owner_qq}"
         parts = split_reply(
             text,
             2,

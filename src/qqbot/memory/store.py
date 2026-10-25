@@ -333,6 +333,20 @@ class Store:
         )
         return int((await cur.fetchone())["n"])
 
+    async def last_message_ts(self, scope: str, role: str | None = None) -> float:
+        """最近一条消息的时间；重启后用它恢复空闲计时，否则主动消息永远不触发。"""
+        if role:
+            cur = await self.db.execute(
+                "SELECT ts FROM messages WHERE scope=? AND role=? ORDER BY ts DESC LIMIT 1",
+                (scope, role),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT ts FROM messages WHERE scope=? ORDER BY ts DESC LIMIT 1", (scope,)
+            )
+        row = await cur.fetchone()
+        return float(row["ts"]) if row else 0.0
+
     # ---------- summaries ----------
     async def latest_summary(self, scope: str, kind: str | None = None) -> dict | None:
         if kind:

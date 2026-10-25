@@ -16,6 +16,9 @@ class FakeStore:
     async def set_setting(self, key: str, value: str) -> None:
         self.values[key] = value
 
+    async def last_message_ts(self, scope: str, role: str | None = None) -> float:
+        return 0.0
+
 
 class FakeApi:
     def __init__(self) -> None:
