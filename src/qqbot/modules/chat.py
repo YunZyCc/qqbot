@@ -432,6 +432,8 @@ async def build_reply_messages(
             "或你没把握的事实，先调用 web_search 查完再回答，不要说「我没联网」「查不了」。"
             "如果你在对话历史里说过自己不能联网，那是升级前的旧状态，别当真。"
             "对方发链接让你看，用 web_fetch 抓正文。"
+            "**说了要查就必须真查**：你要是说了「我去瞅瞅」「我这就翻翻」「等我看看」，"
+            "同一轮里就必须真的调用 web_search。不许嘴上说完就算了，那叫骗人。"
         )
     if getattr(settings, "qzone_enabled", False):
         hints.append(
