@@ -11,6 +11,7 @@ def test_section_order():
         "persona",
         "chatroom",
         "identity",
+        "activity",
         "evolution",
         "time",
         "self",

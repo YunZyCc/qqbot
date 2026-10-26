@@ -70,6 +70,12 @@ def persona_section(ctx: PromptContext) -> str:
 _WEEKDAYS = "一二三四五六日"
 
 
+def activity_section(ctx: PromptContext) -> str:
+    """她今天做过什么（只有行为，没有内容）。"""
+    text = (ctx.activity or "").strip()
+    return f"【你今天】\n{text}" if text else ""
+
+
 def identity_section(ctx: PromptContext) -> str:
     """私聊时告诉她现在在跟谁说话、什么关系、什么不能提。群聊用另一个段。"""
     info = ctx.dm_identity or {}
@@ -240,6 +246,7 @@ def build_default_composer() -> PromptComposer:
     composer.register("persona", persona_section)
     composer.register("chatroom", chatroom_section)
     composer.register("identity", identity_section)
+    composer.register("activity", activity_section)
     composer.register("evolution", evolution_section)
     composer.register("time", time_section)
     composer.register("self", self_section)

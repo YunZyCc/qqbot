@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     diary_minute: int = 10
     diary_backfill_days: int = 7
     diary_prompt_days: int = 3
+    # 每 N 轮刷新一次「当天」日记，别等到次日才有（0 = 关闭）
+    diary_live_every: int = 10
 
     # 向量记忆
     memory_vector_enabled: bool = True

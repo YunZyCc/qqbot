@@ -23,6 +23,8 @@ from .store import Store
 log = logging.getLogger(__name__)
 
 TRAIT_SCOPE = "bot:self"
+# 这几种是「说话习惯」，跟谁都一样；其余按 scope 分开，避免把对某人的称呼用到别人身上
+GLOBAL_KINDS = frozenset({"style", "speech"})
 MAX_ACTIVE = 12
 MAX_CHARACTER_ACTIVE = 2
 VALID_KINDS = ("style", "address", "interest", "character", "lore")
@@ -128,12 +130,19 @@ async def collect_signals(
     messages: list[dict],
     promote_after: int = 3,
     vector=None,
+    scope: str = "",
 ) -> int:
-    """扫一段对话，抽人格信号；累计够次数自动升级。返回处理条数。"""
+    """扫一段对话，抽人格信号；累计够次数自动升级。返回处理条数。
+
+    scope 是当前对话对象；关系类特质（称呼、性格）会存到这个 scope 下，
+    免得把对 A 的称呼用到 B 身上。说话习惯仍然全局共享。
+    """
     if not messages:
         return 0
 
     existing = await store.list_traits(TRAIT_SCOPE, limit=30)
+    if scope and scope != TRAIT_SCOPE:
+        existing = existing + await store.list_traits(scope, limit=20)
     existing_text = (
         "\n".join(f"- [{row['kind']}] {row['content']}" for row in existing)
         or "（暂无）"
@@ -178,8 +187,9 @@ async def collect_signals(
             kind = target["kind"]
             content = target["content"]
 
+        target_scope = TRAIT_SCOPE if kind in GLOBAL_KINDS or not scope else scope
         result = await store.record_trait_signal(
-            TRAIT_SCOPE, kind, content, promote_after
+            target_scope, kind, content, promote_after
         )
         if result.get("promoted"):
             log.info("人格变化生效：[%s] %s", kind, content)
@@ -195,9 +205,11 @@ async def _enforce_limits(store: Store) -> None:
     await store.prune_traits(TRAIT_SCOPE, MAX_ACTIVE)
 
 
-async def active_traits(store: Store) -> list[dict]:
-    """给 prompt 用：active 的变化，性格类最多两条。"""
+async def active_traits(store: Store, scope: str = "") -> list[dict]:
+    """给 prompt 用：全局说话习惯 + 当前这个人的关系特质，性格类最多两条。"""
     rows = await store.list_traits(TRAIT_SCOPE, "active", limit=MAX_ACTIVE)
+    if scope and scope != TRAIT_SCOPE:
+        rows = rows + await store.list_traits(scope, "active", limit=MAX_ACTIVE)
     picked: list[dict] = []
     characters = 0
     for row in rows:

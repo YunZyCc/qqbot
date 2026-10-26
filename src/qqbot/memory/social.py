@@ -111,6 +111,24 @@ async def build_context(store: Store, scope: str) -> str:
     return "\n\n".join(chunks) or "（没有素材，写点日常的观察就行）"
 
 
+async def activity_summary(store: Store, day: str = "") -> str:
+    """今天做过什么。只给行为，不给内容——不然她会把说说的原文念给别人听。"""
+    if not day:
+        import datetime as _dt
+
+        day = _dt.date.today().isoformat()
+    qzone = await store.social_posts_today(QZONE)
+    signature = await store.social_posts_today(SIGNATURE)
+    parts: list[str] = []
+    if qzone:
+        parts.append(f"发过 {len(qzone)} 条说说")
+    if signature:
+        parts.append(f"换过 {len(signature)} 次签名")
+    if not parts:
+        return ""
+    return "今天" + "，".join(parts) + "。"
+
+
 async def build_history(store: Store, kind: str, limit: int = 5) -> str:
     rows = await store.recent_social_posts(kind, limit)
     if not rows:

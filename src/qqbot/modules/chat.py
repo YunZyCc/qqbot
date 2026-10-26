@@ -269,6 +269,7 @@ class ChatModule:
 
         await self._maybe_auto_sticker(sender, user_text, reply_text, sctx, scope)
         self._maybe_auto_social(scope)
+        self._maybe_refresh_diary(scope, sctx)
 
         # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -313,8 +314,39 @@ class ChatModule:
                     recent_growth,
                     promote_after=settings.growth_promote_after,
                     vector=ctx.vector,
+                    scope=scope,
                 )
             )
+
+    def _maybe_refresh_diary(self, scope: str, sctx) -> None:
+        """每 N 轮把当天的日记刷新一次，免得当天聊天时她「不知道今天干了什么」。"""
+        settings = self.ctx.settings
+        every = int(getattr(settings, "diary_live_every", 0) or 0)
+        if every <= 0 or not scope.startswith("private:"):
+            return
+        if sctx.turns % every != 0:
+            return
+        asyncio.create_task(self._refresh_diary(scope))
+
+    async def _refresh_diary(self, scope: str) -> None:
+        from ..memory.diary import generate_diary
+        from ..memory.social import activity_summary
+
+        settings = self.ctx.settings
+        is_owner = scope == f"private:{settings.owner_qq}"
+        try:
+            await generate_diary(
+                self.ctx.store,
+                self.ctx.llm,
+                dt.date.today(),
+                scope,
+                "对方",
+                is_owner,
+                force=True,
+                activity=await activity_summary(self.ctx.store),
+            )
+        except Exception:
+            log.exception("刷新当天日记失败（%s）", scope)
 
     def _maybe_auto_social(self, scope: str) -> None:
         """按概率让她自己发说说 / 换签名。
@@ -424,10 +456,15 @@ async def build_reply_messages(
     self_state = await ctx.self_memory.get_state()
     emotion_text = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
     evolution = (
-        await active_traits(ctx.store) if settings.growth_enabled else []
+        await active_traits(ctx.store, scope) if settings.growth_enabled else []
     )
     chatroom = await _build_chatroom(ctx, scope, sender)
     dm_identity = await _build_dm_identity(ctx, scope, sender)
+    activity = ""
+    if getattr(ctx, "store", None) is not None:
+        from ..memory.social import activity_summary
+
+        activity = await activity_summary(ctx.store)
 
     rolling = await ctx.store.latest_summary(scope, "rolling")
     session = await ctx.store.latest_summary(scope, "session")
@@ -479,6 +516,7 @@ async def build_reply_messages(
             evolution=evolution,
             chatroom=chatroom,
             dm_identity=dm_identity,
+            activity=activity,
             summary=summary,
             facts=facts,
             episodes=episodes,

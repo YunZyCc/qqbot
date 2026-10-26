@@ -286,11 +286,37 @@ class Store:
         # v6：facts.source 从 'extract' 细分成 fact / focus
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
+        # v10：称呼/性格类特质从全局挪到主人名下，避免用到别人身上
+        await self._migrate_relation_traits()
+
         # v9：日记按人拆，主键从 date 改成 (date, scope)
         await self._migrate_diaries()
 
         # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
-        await self.set_setting("schema_version", "9")
+        await self.set_setting("schema_version", "10")
+
+    async def _migrate_relation_traits(self) -> bool:
+        """关系类特质（称呼、性格）原本全挂在 bot:self，会串到所有人身上。
+
+        挪到主人 scope 下；说话习惯（style）仍然全局共享。
+        """
+        cur = await self.db.execute(
+            "SELECT COUNT(*) AS n FROM persona_traits"
+            " WHERE scope='bot:self' AND kind IN ('address','character')"
+        )
+        row = await cur.fetchone()
+        count = int(row["n"]) if row else 0
+        if not count:
+            return False
+
+        await self.db.execute(
+            "UPDATE persona_traits SET scope=? WHERE scope='bot:self'"
+            " AND kind IN ('address','character')",
+            (self.default_scope,),
+        )
+        await self.db.commit()
+        log.info("迁移 %s 条关系类特质到 %s", count, self.default_scope)
+        return True
 
     async def _migrate_diaries(self) -> bool:
         """旧库的 diaries 主键只有 date，改成 (date, scope)；旧数据归给主人。"""

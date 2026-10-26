@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「周周」。
 今天是 {date}。
+今天做过的事：{activity}
 今天和{who}聊了这些：
 {conversation}
 
@@ -25,6 +26,7 @@ DIARY_REVIEW_PROMPT = """写一篇今天的第一人称日记，主角是住在 
 
 DIARY_SOLO_PROMPT = """写一篇今天的第一人称日记，主角是住在 QQ 里的 AI「周周」。
 今天是 {date}。
+今天做过的事：{activity}
 今天对方没有来找我。
 
 要求：
@@ -66,13 +68,15 @@ async def generate_diary(
     scope: str,
     who: str = "对方",
     allow_solo: bool = True,
+    force: bool = False,
+    activity: str = "",
 ) -> bool:
     """给某个 scope 生成某一天的日记。
 
     有对话写回顾式；没对话时只有 allow_solo 才写独处式——
     独处日记属于「她自己的生活」，只给主人写，不然给每个好友都写一篇会很怪。
     """
-    if await store.get_diary(day.isoformat(), scope):
+    if not force and await store.get_diary(day.isoformat(), scope):
         return False
 
     start, end = day_range(day)
@@ -87,10 +91,15 @@ async def generate_diary(
             speaker = who if m["role"] == "user" else "我"
             lines.append(f"{speaker}: {m['content']}")
         prompt = DIARY_REVIEW_PROMPT.format(
-            date=day.isoformat(), conversation="\n".join(lines)[-6000:], who=who
+            date=day.isoformat(),
+            conversation="\n".join(lines)[-6000:],
+            who=who,
+            activity=activity or "（今天没做什么特别的）",
         )
     else:
-        prompt = DIARY_SOLO_PROMPT.format(date=day.isoformat())
+        prompt = DIARY_SOLO_PROMPT.format(
+            date=day.isoformat(), activity=activity or "（今天没做什么特别的）"
+        )
 
     try:
         text, _ = await chat.complete(

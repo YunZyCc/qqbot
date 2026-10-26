@@ -9,6 +9,17 @@ from ..memory.diary import backfill_diaries, generate_diary
 log = logging.getLogger(__name__)
 
 
+async def _activity(ctx, day) -> str:
+    """当天她做过什么（只有行为）。不给内容，免得日记里抄说说原文。"""
+    try:
+        from ..memory.social import activity_summary
+
+        return await activity_summary(ctx.store)
+    except Exception:
+        log.warning("读取活动摘要失败", exc_info=True)
+        return ""
+
+
 class DiaryModule:
     """每天一篇日记：有对话写回顾，没有写独处；启动后补写前一天。"""
 
@@ -63,7 +74,13 @@ class DiaryModule:
         for scope, who, allow_solo in self._targets():
             try:
                 await generate_diary(
-                    self.ctx.store, self.ctx.llm, day, scope, who, allow_solo
+                    self.ctx.store,
+                    self.ctx.llm,
+                    day,
+                    scope,
+                    who,
+                    allow_solo,
+                    activity=await _activity(self.ctx, day),
                 )
             except Exception:
                 log.exception("每日日记生成失败（%s）", scope)
