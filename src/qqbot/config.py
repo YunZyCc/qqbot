@@ -56,6 +56,9 @@ class Settings(BaseSettings):
 
     # 向量记忆
     memory_vector_enabled: bool = True
+    # 本地 Ollama：启动时自动检查并拉起（图片识别 + 向量检索都靠它）
+    ollama_autostart: bool = True
+    ollama_exe: str = ""
     embedding_base_url: str = "http://127.0.0.1:11434/v1"
     embedding_api_key: str = "ollama"
     embedding_model: str = "bge-m3"

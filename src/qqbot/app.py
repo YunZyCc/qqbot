@@ -26,6 +26,7 @@ from .memory.sticker_kit import StickerKit
 from .memory.stickers import StickerLibrary
 from .memory.store import Store
 from .memory.vector import NumpyVectorIndex
+from .ollama import ensure_ollama
 from .onebot.api import OneBotAPI
 from .persona.loader import load_persona
 from .prompt.sections import build_default_composer
@@ -133,6 +134,9 @@ async def build_context(settings: Settings | None = None) -> AppContext:
         default_scope=f"private:{settings.owner_qq}",
     )
     await store.init()
+
+    # 先确认本地模型服务在跑，否则图片识别和向量检索会静默降级
+    await ensure_ollama(settings)
 
     ctx = AppContext(
         settings=settings,
