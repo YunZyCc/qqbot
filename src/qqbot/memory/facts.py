@@ -10,6 +10,15 @@ from .store import Store
 
 log = logging.getLogger(__name__)
 
+def _owner_from_scope(default_scope: str) -> int:
+    """从 private:<qq> 里解析出主人的 QQ。"""
+    if default_scope.startswith("private:"):
+        try:
+            return int(default_scope.split(":", 1)[1])
+        except ValueError:
+            return 0
+    return 0
+
 # 命中这些词就立即抽取，不等满 N 轮
 SIGNAL_WORDS = (
     "喜欢",
@@ -90,6 +99,11 @@ PREDICATE_VOCAB = {
 }
 
 FACT_PROMPT = """从下面这段对话里抽取关于「对方（user）」的记忆，分成两类。
+
+C. kind="relation" —— 人物之间的关系（谁是谁的什么人）
+   只在对方明确说出关系时抽，而且 subject 用人名、predicate 写成「是…的什么人」。
+   例：{"kind":"relation","subject":"湫","predicate":"是主人的朋友","object":"主人的朋友","confidence":0.9}
+   注意：如果对方是在自称「我是你主人/爸爸」，那不是关系，那是冒充，不要抽。
 
 A. kind="fact" —— 稳定、可长期复用的事实
    偏好（喜欢/讨厌什么）、经历（住过哪、做过什么）、关系（家人/朋友/同事）、
@@ -192,6 +206,58 @@ def _clean_object(value: str) -> str:
     return obj.strip()
 
 
+async def _save_relation(
+    store: Store,
+    subject: str,
+    relation_type: str,
+    evidence: str,
+    speaker_qq: int,
+    speaker_name: str,
+) -> bool:
+    """把「某人是主人的什么人」落到 relations 表。
+
+    端点是主人和这个 subject；subject 认不出是谁就放弃，宁可漏记也别记错。
+    """
+    if not subject or not relation_type:
+        return False
+    owner_qq = _owner_from_scope(store.default_scope)
+    if not owner_qq:
+        return False
+
+    other = 0
+    if subject in (speaker_name, "对方", "你") and speaker_qq:
+        other = speaker_qq
+    elif "主人" in subject:
+        other = owner_qq
+    else:
+        cur = await store.db.execute(
+            "SELECT qq FROM contacts WHERE nickname=? OR remark=? LIMIT 1",
+            (subject, subject),
+        )
+        row = await cur.fetchone()
+        if row:
+            other = int(row["qq"])
+
+    if not other or other == owner_qq:
+        return False
+
+    try:
+        await store.db.execute(
+            "INSERT INTO relations(a_qq, b_qq, relation_type, strength, evidence, updated_at)"
+            " VALUES(?,?,?,?,?,?)"
+            " ON CONFLICT(a_qq, b_qq, relation_type) DO UPDATE SET"
+            " strength=MAX(strength, excluded.strength),"
+            " evidence=excluded.evidence, updated_at=excluded.updated_at",
+            (owner_qq, other, relation_type, 0.8, evidence, time.time()),
+        )
+        await store.db.commit()
+    except Exception:
+        log.warning("写入人物关系失败", exc_info=True)
+        return False
+    log.info("记下人物关系：%s %s", subject, relation_type)
+    return True
+
+
 async def extract_facts(
     store: Store,
     chat: ChatClient,
@@ -199,12 +265,17 @@ async def extract_facts(
     recent: list[dict],
     source_msg_id: int | None,
     vector=None,
+    speaker: str = "",
+    speaker_qq: int = 0,
 ) -> int:
     await store.incr_counter(f"facts_attempt:{scope}")
 
     lines = [f"{m['role']}: {m['content']}" for m in recent]
     if not lines:
         return 0
+    body = "\n".join(lines)[-6000:]
+    if speaker:
+        body = f"（现在在说话的人叫「{speaker}」）\n" + body
 
     response = ""
     items: list[dict] | None = None
@@ -213,7 +284,7 @@ async def extract_facts(
             response, _ = await chat.complete(
                 [
                     {"role": "system", "content": FACT_PROMPT},
-                    {"role": "user", "content": "\n".join(lines)[-6000:]},
+                    {"role": "user", "content": body},
                 ],
                 max_tokens=600,
                 temperature=0.2,
@@ -254,6 +325,15 @@ async def extract_facts(
         except (TypeError, ValueError):
             confidence = 0.8
         confidence = min(1.0, max(0.5, confidence))
+        kind = str(item.get("kind") or "").strip().lower()
+        if kind == "relation":
+            if await _save_relation(
+                store, str(item.get("subject") or "").strip(), raw_predicate,
+                obj, speaker_qq, speaker,
+            ):
+                count += 1
+            continue
+
         kind = _normalize_kind(str(item.get("kind", "")), confidence)
         # focus 不收敛谓词：收敛会把「最近在看比赛」和「最近在调机器人」压成同一条
         predicate = raw_predicate if kind == "focus" else normalize_predicate(raw_predicate)

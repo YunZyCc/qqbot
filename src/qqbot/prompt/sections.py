@@ -70,6 +70,27 @@ def persona_section(ctx: PromptContext) -> str:
 _WEEKDAYS = "一二三四五六日"
 
 
+def relations_section(ctx: PromptContext) -> str:
+    """她认识的人之间是什么关系。知道，但不主动说。"""
+    rows = ctx.relations or []
+    if not rows:
+        return ""
+    lines: list[str] = []
+    for row in rows[:12]:
+        if not isinstance(row, dict):
+            lines.append(f"- {row}")
+            continue
+        a = row.get("a_name") or row.get("a_qq") or "?"
+        b = row.get("b_name") or row.get("b_qq") or "?"
+        rel = row.get("relation_type") or ""
+        lines.append(f"- {a} 和 {b}：{rel}")
+    return (
+        "【你认识的人】\n"
+        + "\n".join(lines)
+        + "\n（这些是你心里的底，别主动报给别人听。）"
+    )
+
+
 def activity_section(ctx: PromptContext) -> str:
     """她今天做过什么（只有行为，没有内容）。"""
     text = (ctx.activity or "").strip()
@@ -203,16 +224,6 @@ def episodes_section(ctx: PromptContext) -> str:
     return "你们之间真实发生过的事（按需引用，别每次全翻出来）：\n" + "\n".join(lines)
 
 
-def relations_section(ctx: PromptContext) -> str:
-    if not ctx.relations:
-        return ""
-    lines = [
-        f"- {r['a_qq']} 和 {r['b_qq']} 是{r['relation_type']}（{r.get('evidence', '')}）"
-        for r in ctx.relations
-    ]
-    return "你记得的人际关系：\n" + "\n".join(lines)
-
-
 def images_section(ctx: PromptContext) -> str:
     if not ctx.images.strip():
         return ""
@@ -265,13 +276,13 @@ def build_default_composer() -> PromptComposer:
     composer.register("chatroom", chatroom_section)
     composer.register("identity", identity_section)
     composer.register("activity", activity_section)
+    composer.register("relations", relations_section)
     composer.register("evolution", evolution_section)
     composer.register("time", time_section)
     composer.register("self", self_section)
     composer.register("emotion", emotion_section)
     composer.register("facts", facts_section)
     composer.register("episodes", episodes_section)
-    composer.register("relations", relations_section)
     composer.register("images", images_section)
     composer.register("diary", diary_section)
     composer.register("summary", summary_section)

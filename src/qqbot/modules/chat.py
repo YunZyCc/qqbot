@@ -287,6 +287,8 @@ class ChatModule:
                     recent,
                     ev.message_id,
                     vector=ctx.vector,
+                    speaker=(ev.sender_card or ev.sender_name or ""),
+                    speaker_qq=ev.sender_id or 0,
                 )
             )
         asyncio.create_task(
@@ -455,6 +457,19 @@ async def build_reply_messages(
             facts.append(row)
 
     relations = await ctx.contacts.relations_of(sender)
+    if relations:
+        names: dict[int, str] = {}
+        for qq in {*[r["a_qq"] for r in relations], *[r["b_qq"] for r in relations]}:
+            contact = await ctx.contacts.get_contact(int(qq))
+            if contact:
+                names[int(qq)] = str(
+                    contact.get("remark") or contact.get("nickname") or ""
+                )
+        owner = ctx.settings.owner_qq
+        names.setdefault(owner, "主人")
+        for row in relations:
+            row["a_name"] = names.get(int(row["a_qq"]), str(row["a_qq"]))
+            row["b_name"] = names.get(int(row["b_qq"]), str(row["b_qq"]))
     self_state = await ctx.self_memory.get_state()
     emotion_text = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
     evolution = (
