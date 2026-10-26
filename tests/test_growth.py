@@ -32,7 +32,7 @@ MESSAGES = [{"role": "user", "content": "少说行吧，不好听"}]
 async def test_signal_needs_evidence_before_active(tmp_path):
     store = await _store(tmp_path)
     chat = FakeChat(
-        '[{"kind":"style","content":"你正在戒掉「行吧」，改说「成」","confidence":0.8}]'
+        '[{"kind":"character","content":"你正在戒掉「行吧」，改说「成」","confidence":0.8}]'
     )
     await collect_signals(store, chat, MESSAGES, promote_after=3)
     rows = await store.list_traits(TRAIT_SCOPE)
@@ -52,7 +52,7 @@ async def test_signal_needs_evidence_before_active(tmp_path):
 async def test_same_signal_merges_instead_of_duplicating(tmp_path):
     store = await _store(tmp_path)
     chat = FakeChat(
-        '[{"kind":"style","content":"你正在戒掉「行吧」","confidence":0.8}]'
+        '[{"kind":"character","content":"你正在戒掉「行吧」","confidence":0.8}]'
     )
     for _ in range(4):
         await collect_signals(store, chat, MESSAGES, promote_after=3)
@@ -65,7 +65,7 @@ async def test_same_signal_merges_instead_of_duplicating(tmp_path):
 async def test_content_must_start_with_you(tmp_path):
     store = await _store(tmp_path)
     chat = FakeChat(
-        '[{"kind":"style","content":"今天聊了CS比赛","confidence":0.8}]'
+        '[{"kind":"character","content":"今天聊了CS比赛","confidence":0.8}]'
     )
     await collect_signals(store, chat, MESSAGES, promote_after=3)
     assert await store.list_traits(TRAIT_SCOPE) == []
@@ -109,7 +109,7 @@ async def test_active_traits_limits_character_rows(tmp_path):
         '[{"kind":"character","content":"你变得更主动了"}]',
         '[{"kind":"character","content":"你的毒舌收敛了"}]',
         '[{"kind":"character","content":"你更爱撒娇了"}]',
-        '[{"kind":"style","content":"你开始说「成」"}]',
+        '[{"kind":"character","content":"你开始说「成」"}]',
     ]
     for payload in payloads:
         for _ in range(3):
@@ -118,7 +118,7 @@ async def test_active_traits_limits_character_rows(tmp_path):
     picked = await active_traits(store)
     characters = [row for row in picked if row["kind"] == "character"]
     assert len(characters) == MAX_CHARACTER_ACTIVE
-    assert any(row["kind"] == "style" for row in picked)
+    assert any(row["kind"] == "character" for row in picked)
     await store.close()
 
 
@@ -126,7 +126,7 @@ async def test_prune_keeps_active_under_limit(tmp_path):
     store = await _store(tmp_path)
     for index in range(MAX_ACTIVE + 4):
         await store.record_trait_signal(
-            TRAIT_SCOPE, "style", f"你开始说第{index}句话", promote_after=1
+            TRAIT_SCOPE, "character", f"你开始说第{index}句话", promote_after=1
         )
     active = await store.list_traits(TRAIT_SCOPE, "active", limit=200)
     await store.prune_traits(TRAIT_SCOPE, MAX_ACTIVE)
@@ -138,7 +138,7 @@ async def test_prune_keeps_active_under_limit(tmp_path):
 
 async def test_clear_traits_resets_to_baseline(tmp_path):
     store = await _store(tmp_path)
-    await store.record_trait_signal(TRAIT_SCOPE, "style", "你开始说「成」", 1)
+    await store.record_trait_signal(TRAIT_SCOPE, "character", "你开始说「成」", 1)
     assert await store.clear_traits(TRAIT_SCOPE) == 1
     assert await store.list_traits(TRAIT_SCOPE) == []
     await store.close()
@@ -186,7 +186,7 @@ async def test_similar_wording_merges_via_bigram(tmp_path):
 async def test_static_description_rejected_by_prompt_contract(tmp_path):
     """静态描述不该成为人格（这里是代码层兜底：内容必须以「你」开头）。"""
     store = await _store(tmp_path)
-    chat = FakeChat('[{"kind":"style","content":"爱用行吧接话"}]')
+    chat = FakeChat('[{"kind":"character","content":"爱用行吧接话"}]')
     await collect_signals(store, chat, MESSAGES, promote_after=3)
     assert await store.list_traits(TRAIT_SCOPE) == []
     await store.close()

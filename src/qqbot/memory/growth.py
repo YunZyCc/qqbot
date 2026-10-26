@@ -27,14 +27,13 @@ TRAIT_SCOPE = "bot:self"
 GLOBAL_KINDS = frozenset({"style", "speech"})
 MAX_ACTIVE = 12
 MAX_CHARACTER_ACTIVE = 2
-VALID_KINDS = ("style", "address", "interest", "character", "lore")
+VALID_KINDS = ("address", "interest", "character", "lore")
 MAX_CONTENT_CHARS = 60
 MERGE_THRESHOLD = 0.82
 
 TRAIT_PROMPT = """你在观察一段聊天里「AI 自己」发生了什么变化，抽取能长期指导她行为的变化信号。
 
-只抽这五类，kind 取值：
-- style     说话习惯：口头禅、句式、语气的变化（她在戒掉什么、开始说什么）
+只抽这四类，kind 取值：
 - address   称呼：她怎么叫对方，对方怎么叫她
 - interest  兴趣：她主动表现出偏好、熟悉起来的话题
 - character 性格：她的脾气、主动性、尺度发生了变化（只抽确实反复体现的）
@@ -56,8 +55,11 @@ TRAIT_PROMPT = """你在观察一段聊天里「AI 自己」发生了什么变�
 已经记过的变化不要重复输出（下面会给出已有记录）。如果新的观察意思和已有的差不多，
 就原样输出已有的那句，不要换措辞。
 
+**不要抽口头禅和句式习惯。** 她已经明确要求不用固定口头禅，"
+"抽出来反而会把她钉死在某句话上。
+
 输出 JSON 数组：
-[{"kind":"style","content":"...","confidence":0.7}]
+[{"kind":"address","content":"...","confidence":0.7}]
 
 规则：
 - 必须是从对话里真实体现的，不要根据人设推测。
