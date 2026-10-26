@@ -31,7 +31,8 @@ _LEAK_WORDS = ("对方", "私聊", "主人", "聊天记录")
 
 QZONE_PROMPT = """你正在写一条 QQ 空间说说，发出去好友都能看到。
 
-下面这些素材只用来感受情绪和氛围，具体事情一个字都不许照搬：
+下面这些素材只用来感受情绪。所有句子都要你自己重新写，
+不许照抄素材里的任何一句话、也不许保留素材的句式。
 {context}
 
 你最近发过的说说（必须避开这些内容和主题）：
@@ -82,6 +83,24 @@ def clean_content(text: str, max_chars: int) -> str:
     return cut.strip()
 
 
+# 说说至少这么多字，签名短一点；太短的纯碎片不如不发
+MIN_CHARS = {QZONE: 12, SIGNATURE: 6}
+
+
+def _grams(text: str) -> set[str]:
+    text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", text or "")
+    return {text[i : i + 2] for i in range(len(text) - 1)}
+
+
+def _too_similar(a: str, b: str, threshold: float = 0.6) -> bool:
+    """两条内容重合度太高就不发，免得连着刷同一种话。"""
+    ga, gb = _grams(a), _grams(b)
+    if not ga or not gb:
+        return False
+    overlap = len(ga & gb)
+    return overlap / min(len(ga), len(gb)) >= threshold
+
+
 def leaks_private(text: str) -> bool:
     """是否在把私聊里的事往外说。
 
@@ -92,31 +111,38 @@ def leaks_private(text: str) -> bool:
     return "你" in text.replace("你们", "")
 
 
-async def build_context(store: Store, scope: str) -> str:
-    """攒素材：当天日记 + 会话摘要 + 最近事件。只给情绪，不给事实。"""
+async def build_context(store: Store, scope: str = "") -> str:
+    """攒素材。
+
+    只用和主人的对话——好友聊的天一个字都不上空间，那是最容易出事的地方。
+    日记也只给 mood 一个词，不给正文：给了正文她就会照着抄，
+    「今天这页留着，不折叠」这种日记腔会直接发出去。
+    """
+    owner_scope = scope if scope.startswith("private:") else ""
+    if not owner_scope:
+        owner_scope = f"private:{store.default_scope.split(':', 1)[-1]}"
+
     chunks: list[str] = []
 
-    diaries = await store.recent_diaries(1, scope=scope)
+    diaries = await store.recent_diaries(1, scope=owner_scope)
     if diaries:
-        chunks.append("今天的心情：" + diaries[-1]["text"][:300])
+        mood = str(diaries[-1].get("mood") or "").strip()
+        if mood:
+            chunks.append(f"今天的心情大概是：{mood}")
 
-    session = await store.latest_summary(scope, "session")
+    session = await store.latest_summary(owner_scope, "session")
     if session:
-        chunks.append("最近聊到的事（只看氛围）：" + session["text"][:300])
+        chunks.append("最近在忙的事（改写，别照抄）：" + session["text"][:200])
 
-    episodes = await store.recent_episodes(scope, 1)
+    episodes = await store.recent_episodes(owner_scope, 1)
     if episodes:
-        chunks.append("最近发生的事（只看氛围）：" + episodes[-1]["text"][:200])
+        chunks.append("最近发生的事（改写，别照抄）：" + episodes[-1]["text"][:150])
 
     return "\n\n".join(chunks) or "（没有素材，写点日常的观察就行）"
 
 
 async def activity_summary(store: Store, day: str = "") -> str:
     """今天做过什么。只给行为，不给内容——不然她会把说说的原文念给别人听。"""
-    if not day:
-        import datetime as _dt
-
-        day = _dt.date.today().isoformat()
     qzone = await store.social_posts_today(QZONE)
     signature = await store.social_posts_today(SIGNATURE)
     parts: list[str] = []
@@ -192,6 +218,17 @@ async def generate_text(
     if not cleaned:
         log.warning("%s内容清洗后为空", kind)
         return ""
+
+    floor = MIN_CHARS.get(kind, 8)
+    if len(cleaned) < floor:
+        log.info("%s太短（%s 字），丢弃：%s", kind, len(cleaned), cleaned)
+        return ""
+
+    recent = await ctx.store.recent_social_posts(kind, 5)
+    for row in recent:
+        if _too_similar(cleaned, str(row["content"])):
+            log.info("%s和最近内容太像，丢弃：%s", kind, cleaned)
+            return ""
     return cleaned
 
 

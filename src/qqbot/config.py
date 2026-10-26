@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     qzone_fallback_minute: int = 0
     qzone_history: int = 5
     # 每轮回复后自动发一条说说的概率（她没自己调工具时兜底）
-    qzone_auto_rate: float = 0.15
+    qzone_auto_rate: float = 0.03
 
     # 个性签名：每天定时换一次
     signature_enabled: bool = False
@@ -172,7 +172,7 @@ class Settings(BaseSettings):
     signature_daily_max: int = 0   # 0 = 不限
     signature_history: int = 5
     # 每轮回复后自动换签名的概率
-    signature_auto_rate: float = 0.08
+    signature_auto_rate: float = 0.02
 
     # 主动开口
     proactive_enabled: bool = True
