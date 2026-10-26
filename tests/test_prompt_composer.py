@@ -58,7 +58,7 @@ def test_relations_rendered():
     messages = composer.compose(
         PromptContext(
             persona="人设",
-            relations=[{"a_qq": 1, "b_qq": 2, "relation_type": "同事", "evidence": "他说过"}],
+            relations=[{"src_qq": 1, "dst_qq": 2, "rel_type": "colleague", "label": "同事"}],
             history=[{"role": "user", "content": "hi"}],
         )
     )

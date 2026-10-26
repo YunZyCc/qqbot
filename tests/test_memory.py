@@ -65,7 +65,7 @@ async def test_migration_from_legacy_db(tmp_path):
     await store.init()
     rows = await store.recent_messages("private:9", 10)
     assert rows[0]["content"] == "旧消息"
-    assert await store.get_setting("schema_version") == "10"
+    assert await store.get_setting("schema_version") == "11"
     await store.close()
 
 
@@ -73,10 +73,10 @@ async def test_contacts_and_relations(tmp_path):
     store = await _store(tmp_path)
     contacts = ContactStore(store)
     await contacts.upsert_contact(1, nickname="小明")
-    await contacts.upsert_relation(1, 2, "同事", 0.8, "他说过")
+    await contacts.upsert_relation(1, 2, "colleague", "同事", 0.8, 1)
     assert (await contacts.get_contact(1))["nickname"] == "小明"
     rels = await contacts.relations_of(2)
-    assert rels and rels[0]["relation_type"] == "同事"
+    assert rels and rels[0]["rel_type"] == "colleague"
     await store.close()
 
 

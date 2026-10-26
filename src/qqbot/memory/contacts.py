@@ -50,34 +50,46 @@ class ContactStore:
 
     async def upsert_relation(
         self,
-        a_qq: int,
-        b_qq: int,
-        relation_type: str,
-        strength: float = 0.5,
-        evidence: str = "",
-    ) -> None:
-        now = time.time()
+        src_qq: int,
+        dst_qq: int,
+        rel_type: str,
+        label: str = "",
+        confidence: float = 0.8,
+        source_qq: int = 0,
+    ) -> bool:
+        """写一条关系。同一对人只留一条，新证据更可信才覆盖旧的。
+
+        主人说的话权重最高；本人自称次之；别人转述最低——防止有人自称是主人的爸爸
+        就把真实关系盖掉。
+        """
+        if not src_qq or not dst_qq or src_qq == dst_qq:
+            return False
+        rel_type = (rel_type or "other").strip() or "other"
+
+        cur = await self.store.db.execute(
+            "SELECT rel_type, confidence FROM relations WHERE src_qq=? AND dst_qq=?",
+            (src_qq, dst_qq),
+        )
+        existing = await cur.fetchone()
+        if existing is not None and float(existing["confidence"]) > confidence:
+            return False
+
         await self.store.db.execute(
-            "INSERT INTO relations(a_qq, b_qq, relation_type, strength, evidence, updated_at)"
-            " VALUES(?,?,?,?,?,?)"
-            " ON CONFLICT(a_qq, b_qq, relation_type) DO UPDATE SET"
-            " strength=excluded.strength, evidence=excluded.evidence,"
+            "INSERT INTO relations(src_qq, dst_qq, rel_type, label, confidence,"
+            " source_qq, updated_at) VALUES(?,?,?,?,?,?,?)"
+            " ON CONFLICT(src_qq, dst_qq) DO UPDATE SET"
+            " rel_type=excluded.rel_type, label=excluded.label,"
+            " confidence=excluded.confidence, source_qq=excluded.source_qq,"
             " updated_at=excluded.updated_at",
-            (a_qq, b_qq, relation_type, strength, evidence, now),
+            (src_qq, dst_qq, rel_type, label, confidence, source_qq, time.time()),
         )
         await self.store.db.commit()
-
-    async def list_relations(self, limit: int = 30) -> list[dict]:
-        """全部人际关系。她认识的人就那么几个，一次给全，谁跟谁都清楚。"""
-        cur = await self.store.db.execute(
-            "SELECT * FROM relations ORDER BY strength DESC, updated_at DESC LIMIT ?",
-            (limit,),
-        )
-        return [dict(r) for r in await cur.fetchall()]
+        return True
 
     async def relations_of(self, qq: int) -> list[dict]:
         cur = await self.store.db.execute(
-            "SELECT * FROM relations WHERE a_qq=? OR b_qq=? ORDER BY strength DESC",
+            "SELECT * FROM relations WHERE src_qq=? OR dst_qq=?"
+            " ORDER BY confidence DESC",
             (qq, qq),
         )
         return [dict(r) for r in await cur.fetchall()]

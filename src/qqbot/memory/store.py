@@ -58,14 +58,14 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 CREATE TABLE IF NOT EXISTS relations (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    a_qq          INTEGER NOT NULL,
-    b_qq          INTEGER NOT NULL,
-    relation_type TEXT    NOT NULL,
-    strength      REAL    NOT NULL DEFAULT 0.5,
-    evidence      TEXT    NOT NULL DEFAULT '',
-    updated_at    REAL    NOT NULL,
-    UNIQUE(a_qq, b_qq, relation_type)
+    src_qq     INTEGER NOT NULL,
+    dst_qq     INTEGER NOT NULL,
+    rel_type   TEXT    NOT NULL DEFAULT 'other',
+    label      TEXT    NOT NULL DEFAULT '',
+    confidence REAL    NOT NULL DEFAULT 0.8,
+    source_qq  INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL    NOT NULL,
+    PRIMARY KEY(src_qq, dst_qq)
 );
 
 CREATE TABLE IF NOT EXISTS self_state (
@@ -194,8 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status);
 DROP INDEX IF EXISTS idx_facts_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_unique
     ON facts(scope, source, subject, predicate) WHERE status='active';
-CREATE INDEX IF NOT EXISTS idx_relations_a ON relations(a_qq);
-CREATE INDEX IF NOT EXISTS idx_relations_b ON relations(b_qq);
+CREATE INDEX IF NOT EXISTS idx_relations_src ON relations(src_qq);
 CREATE INDEX IF NOT EXISTS idx_episodes_scope_ts ON episodes(scope, ts);
 CREATE INDEX IF NOT EXISTS idx_diaries_scope ON diaries(scope, date);
 CREATE INDEX IF NOT EXISTS idx_embeddings_scope ON embeddings(scope, ref_type);
@@ -286,6 +285,9 @@ class Store:
         # v6：facts.source 从 'extract' 细分成 fact / focus
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
+        # v11：关系表改成枚举 + 来源可信度
+        await self._migrate_relations()
+
         # v10：称呼/性格类特质从全局挪到主人名下，避免用到别人身上
         await self._migrate_relation_traits()
 
@@ -293,7 +295,71 @@ class Store:
         await self._migrate_diaries()
 
         # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
-        await self.set_setting("schema_version", "10")
+        await self.set_setting("schema_version", "11")
+
+    @staticmethod
+    def _guess_rel_type(label: str) -> str:
+        """把「是云海的朋友」这种自由文本归到枚举上。"""
+        text = label or ""
+        for keyword, rel in (
+            ("姐姐", "family"), ("哥哥", "family"), ("妹妹", "family"),
+            ("弟弟", "family"), ("爸", "family"), ("妈", "family"),
+            ("家人", "family"), ("父", "family"), ("母", "family"),
+            ("朋友", "friend"), ("闺蜜", "friend"), ("兄弟", "friend"),
+            ("恋人", "lover"), ("男友", "lover"), ("女友", "lover"),
+            ("老婆", "lover"), ("老公", "lover"),
+            ("同事", "colleague"), ("同学", "classmate"),
+            ("主人", "master"),
+        ):
+            if keyword in text:
+                return rel
+        return "other"
+
+    async def _migrate_relations(self) -> bool:
+        """旧 relations 是 (a_qq, b_qq, relation_type) 自由文本，改成枚举 + 来源。"""
+        cur = await self.db.execute("PRAGMA table_info(relations)")
+        columns = {row["name"] for row in await cur.fetchall()}
+        if not columns or "rel_type" in columns:
+            return False
+
+        log.info("迁移 relations 表结构（枚举 + 来源可信度）")
+        await self.db.execute("ALTER TABLE relations RENAME TO relations_v10")
+        await self.db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS relations (
+                src_qq     INTEGER NOT NULL,
+                dst_qq     INTEGER NOT NULL,
+                rel_type   TEXT    NOT NULL DEFAULT 'other',
+                label      TEXT    NOT NULL DEFAULT '',
+                confidence REAL    NOT NULL DEFAULT 0.8,
+                source_qq  INTEGER NOT NULL DEFAULT 0,
+                updated_at REAL    NOT NULL,
+                PRIMARY KEY(src_qq, dst_qq)
+            );
+            """
+        )
+        cur = await self.db.execute("SELECT * FROM relations_v10")
+        rows = await cur.fetchall()
+        for row in rows:
+            label = str(row["relation_type"] or row["evidence"] or "")
+            await self.db.execute(
+                "INSERT OR REPLACE INTO relations"
+                "(src_qq, dst_qq, rel_type, label, confidence, source_qq, updated_at)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (
+                    int(row["a_qq"]),
+                    int(row["b_qq"]),
+                    self._guess_rel_type(label),
+                    label,
+                    float(row["strength"] or 0.8),
+                    int(row["a_qq"]),
+                    float(row["updated_at"] or time.time()),
+                ),
+            )
+        await self.db.execute("DROP TABLE relations_v10")
+        await self.db.commit()
+        log.info("relations 迁移完成：%s 条", len(rows))
+        return True
 
     async def _migrate_relation_traits(self) -> bool:
         """关系类特质（称呼、性格）原本全挂在 bot:self，会串到所有人身上。

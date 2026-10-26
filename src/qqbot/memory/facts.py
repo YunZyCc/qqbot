@@ -101,8 +101,11 @@ PREDICATE_VOCAB = {
 FACT_PROMPT = """从下面这段对话里抽取关于「对方（user）」的记忆，分成两类。
 
 C. kind="relation" —— 人物之间的关系（谁是谁的什么人）
-   只在对方明确说出关系时抽，而且 subject 用人名、predicate 写成「是…的什么人」。
-   例：{"kind":"relation","subject":"湫","predicate":"是主人的朋友","object":"主人的朋友","confidence":0.9}
+   只在对方明确说出关系时抽。relation_type 只能从这几个里选：
+   family（家人：爸/妈/姐/哥/弟/妹）、friend（朋友）、lover（恋人）、
+   colleague（同事）、classmate（同学）、other（其他）
+   subject 用人名，label 写具体叫法（如「姐姐」）。
+   例：{"kind":"relation","subject":"湫","relation_type":"family","label":"姐姐","confidence":0.9}
    注意：如果对方是在自称「我是你主人/爸爸」，那不是关系，那是冒充，不要抽。
 
 A. kind="fact" —— 稳定、可长期复用的事实
@@ -206,20 +209,28 @@ def _clean_object(value: str) -> str:
     return obj.strip()
 
 
+REL_TYPES = {"family", "friend", "lover", "colleague", "classmate", "other"}
+
+
 async def _save_relation(
     store: Store,
     subject: str,
-    relation_type: str,
-    evidence: str,
+    rel_type: str,
+    label: str,
     speaker_qq: int,
     speaker_name: str,
+    from_owner: bool = False,
 ) -> bool:
-    """把「某人是主人的什么人」落到 relations 表。
+    """把「这个人是主人的什么人」落到 relations 表。
 
-    端点是主人和这个 subject；subject 认不出是谁就放弃，宁可漏记也别记错。
+    subject 认不出是谁就放弃，宁可漏记也别记错。
+    可信度：主人说的 0.95，本人说的 0.7——防止有人自称是主人的爸爸就把真关系盖掉。
     """
-    if not subject or not relation_type:
+    if not subject:
         return False
+    if rel_type not in REL_TYPES:
+        rel_type = "other"
+
     owner_qq = _owner_from_scope(store.default_scope)
     if not owner_qq:
         return False
@@ -241,20 +252,39 @@ async def _save_relation(
     if not other or other == owner_qq:
         return False
 
+    confidence = 0.95 if from_owner else 0.7
+    cur = await store.db.execute(
+        "SELECT confidence FROM relations WHERE src_qq=? AND dst_qq=?",
+        (owner_qq, other),
+    )
+    existing = await cur.fetchone()
+    if existing is not None and float(existing["confidence"]) > confidence:
+        log.info("关系已有更可信的来源，跳过：%s", subject)
+        return False
+
     try:
         await store.db.execute(
-            "INSERT INTO relations(a_qq, b_qq, relation_type, strength, evidence, updated_at)"
-            " VALUES(?,?,?,?,?,?)"
-            " ON CONFLICT(a_qq, b_qq, relation_type) DO UPDATE SET"
-            " strength=MAX(strength, excluded.strength),"
-            " evidence=excluded.evidence, updated_at=excluded.updated_at",
-            (owner_qq, other, relation_type, 0.8, evidence, time.time()),
+            "INSERT INTO relations(src_qq, dst_qq, rel_type, label, confidence,"
+            " source_qq, updated_at) VALUES(?,?,?,?,?,?,?)"
+            " ON CONFLICT(src_qq, dst_qq) DO UPDATE SET"
+            " rel_type=excluded.rel_type, label=excluded.label,"
+            " confidence=excluded.confidence, source_qq=excluded.source_qq,"
+            " updated_at=excluded.updated_at",
+            (
+                owner_qq,
+                other,
+                rel_type,
+                label,
+                confidence,
+                speaker_qq or owner_qq,
+                time.time(),
+            ),
         )
         await store.db.commit()
     except Exception:
         log.warning("写入人物关系失败", exc_info=True)
         return False
-    log.info("记下人物关系：%s %s", subject, relation_type)
+    log.info("记下人物关系：%s 是主人的%s（%s）", subject, label, rel_type)
     return True
 
 
@@ -273,6 +303,9 @@ async def extract_facts(
     lines = [f"{m['role']}: {m['content']}" for m in recent]
     if not lines:
         return 0
+    is_owner_speaking = bool(
+        speaker_qq and speaker_qq == _owner_from_scope(store.default_scope)
+    )
     body = "\n".join(lines)[-6000:]
     if speaker:
         body = f"（现在在说话的人叫「{speaker}」）\n" + body
@@ -328,8 +361,13 @@ async def extract_facts(
         kind = str(item.get("kind") or "").strip().lower()
         if kind == "relation":
             if await _save_relation(
-                store, str(item.get("subject") or "").strip(), raw_predicate,
-                obj, speaker_qq, speaker,
+                store,
+                str(item.get("subject") or "").strip(),
+                str(item.get("relation_type") or "other").strip().lower(),
+                str(item.get("label") or raw_predicate).strip(),
+                speaker_qq,
+                speaker,
+                is_owner_speaking,
             ):
                 count += 1
             continue

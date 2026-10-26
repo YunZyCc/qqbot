@@ -456,20 +456,16 @@ async def build_reply_messages(
         if float(row.get("updated_at") or 0) >= cutoff and row["id"] not in seen:
             facts.append(row)
 
-    relations = await ctx.contacts.list_relations()
-    if relations:
-        names: dict[int, str] = {}
-        for qq in {*[r["a_qq"] for r in relations], *[r["b_qq"] for r in relations]}:
-            contact = await ctx.contacts.get_contact(int(qq))
-            if contact:
-                names[int(qq)] = str(
-                    contact.get("remark") or contact.get("nickname") or ""
-                )
-        owner = ctx.settings.owner_qq
-        names.setdefault(owner, "主人")
-        for row in relations:
-            row["a_name"] = names.get(int(row["a_qq"]), str(row["a_qq"]))
-            row["b_name"] = names.get(int(row["b_qq"]), str(row["b_qq"]))
+    relations = await ctx.contacts.relations_of(sender)
+    for row in relations:
+        other = int(row["dst_qq"])
+        contact = await ctx.contacts.get_contact(other)
+        if contact:
+            row["dst_name"] = str(
+                contact.get("remark") or contact.get("nickname") or other
+            )
+        else:
+            row["dst_name"] = str(other)
     self_state = await ctx.self_memory.get_state()
     emotion_text = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
     evolution = (
@@ -589,7 +585,25 @@ async def _build_dm_identity(
     if policy is not None and hasattr(policy, "is_owner"):
         is_owner = policy.is_owner(sender)
 
-    return {"qq": sender, "name": name or str(sender), "is_owner": is_owner}
+    owner_name = "主人"
+    try:
+        owner_qq = ctx.settings.owner_qq
+        owner_contact = await ctx.contacts.get_contact(owner_qq)
+        if owner_contact:
+            owner_name = str(
+                owner_contact.get("remark")
+                or owner_contact.get("nickname")
+                or "主人"
+            )
+    except Exception:
+        log.warning("读取主人昵称失败", exc_info=True)
+
+    return {
+        "qq": sender,
+        "name": name or str(sender),
+        "is_owner": is_owner,
+        "owner_name": owner_name,
+    }
 
 
 async def _build_chatroom(ctx, scope: str, sender: int) -> dict | None:
