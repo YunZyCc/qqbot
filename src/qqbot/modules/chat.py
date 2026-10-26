@@ -347,6 +347,7 @@ class ChatModule:
                 is_owner,
                 force=True,
                 activity=await activity_summary(self.ctx.store),
+                vector=self.ctx.vector,
             )
         except Exception:
             log.exception("刷新当天日记失败（%s）", scope)
@@ -474,10 +475,16 @@ async def build_reply_messages(
     chatroom = await _build_chatroom(ctx, scope, sender)
     dm_identity = await _build_dm_identity(ctx, scope, sender, sender_name)
     activity = ""
+    plan_text = ""
     if getattr(ctx, "store", None) is not None:
+        from ..memory.plan import describe, today_plan
         from ..memory.social import activity_summary
 
         activity = await activity_summary(ctx.store)
+        try:
+            plan_text = describe(await today_plan(ctx.store))
+        except Exception:
+            log.warning("读取当天日程失败", exc_info=True)
 
     rolling = await ctx.store.latest_summary(scope, "rolling")
     session = await ctx.store.latest_summary(scope, "session")
@@ -530,6 +537,7 @@ async def build_reply_messages(
             chatroom=chatroom,
             dm_identity=dm_identity,
             activity=activity,
+            plan=plan_text,
             summary=summary,
             facts=facts,
             episodes=episodes,

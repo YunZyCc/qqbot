@@ -6,6 +6,7 @@ import logging
 import re
 
 from ..llm.client import ChatClient
+from .plan import today_plan
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ async def generate_diary(
     allow_solo: bool = True,
     force: bool = False,
     activity: str = "",
+    vector=None,
 ) -> bool:
     """给某个 scope 生成某一天的日记。
 
@@ -81,6 +83,14 @@ async def generate_diary(
 
     start, end = day_range(day)
     messages = await store.messages_between(start, end, scope)
+
+    # 她原本打算做什么：写进日记，日程才算被"消费"掉
+    plan = await today_plan(store, day)
+    if plan and plan.get("items"):
+        planned = "、".join(str(i.get("activity") or "") for i in plan["items"])
+        activity = (activity + "\n" if activity else "") + f"今天原本打算：{planned}" + (
+            f"（{plan['theme']}）" if plan.get("theme") else ""
+        )
     has_chat = bool(messages)
     if not has_chat and not allow_solo:
         return False
@@ -115,14 +125,22 @@ async def generate_diary(
     if parsed is None:
         return False
 
-    await store.upsert_diary(
+    diary_text = str(parsed["text"]).strip()[:2000]
+    diary_id = await store.upsert_diary(
         day.isoformat(),
-        str(parsed["text"]).strip()[:2000],
+        diary_text,
         mood=str(parsed.get("mood") or "")[:20],
         highlights=json.dumps(parsed.get("highlights") or [], ensure_ascii=False),
         source_msg_count=len(messages),
         scope=scope,
     )
+    if vector is not None and diary_id:
+        try:
+            await vector.upsert(
+                scope, "diary", diary_id, diary_text[:500]
+            )
+        except Exception:
+            log.warning("日记向量化失败（不影响对话）", exc_info=True)
     log.info(
         "已写日记 %s（%s，%s模式，%s 字）",
         day,

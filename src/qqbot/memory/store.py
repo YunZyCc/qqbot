@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS episodes (
 );
 
 CREATE TABLE IF NOT EXISTS diaries (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
     date             TEXT NOT NULL,
     scope            TEXT NOT NULL DEFAULT 'bot:self',
     text             TEXT NOT NULL,
@@ -108,7 +109,17 @@ CREATE TABLE IF NOT EXISTS diaries (
     highlights       TEXT NOT NULL DEFAULT '',
     source_msg_count INTEGER NOT NULL DEFAULT 0,
     created_at       REAL NOT NULL,
-    PRIMARY KEY(date, scope)
+    UNIQUE(date, scope)
+);
+
+-- 她每天打算干什么。按天存，全局共享：她的一天是她自己的
+CREATE TABLE IF NOT EXISTS daily_plans (
+    date         TEXT NOT NULL,
+    theme        TEXT NOT NULL DEFAULT '',
+    mood         TEXT NOT NULL DEFAULT '',
+    items_json   TEXT NOT NULL DEFAULT '[]',
+    generated_at REAL NOT NULL,
+    PRIMARY KEY(date)
 );
 
 CREATE TABLE IF NOT EXISTS embeddings (
@@ -285,6 +296,9 @@ class Store:
         # v6：facts.source 从 'extract' 细分成 fact / focus
         await self.db.execute("UPDATE facts SET source='fact' WHERE source='extract'")
 
+        # v12：日记加自增 id（向量要用），并为日程做准备
+        await self._migrate_diary_id()
+
         # v11：关系表改成枚举 + 来源可信度
         await self._migrate_relations()
 
@@ -295,7 +309,7 @@ class Store:
         await self._migrate_diaries()
 
         # v7：群聊接入，新增 group_members 表（表本身由 SCHEMA 建）
-        await self.set_setting("schema_version", "11")
+        await self.set_setting("schema_version", "12")
 
     @staticmethod
     def _guess_rel_type(label: str) -> str:
@@ -314,6 +328,36 @@ class Store:
             if keyword in text:
                 return rel
         return "other"
+
+    async def _migrate_diary_id(self) -> bool:
+        """旧 diaries 只有 (date, scope) 复合主键，向量需要稳定的整数 id。"""
+        cur = await self.db.execute("PRAGMA table_info(diaries)")
+        columns = {row["name"] for row in await cur.fetchall()}
+        if not columns or "id" in columns:
+            return False
+
+        log.info("迁移 diaries 表：补自增 id 供向量使用")
+        await self.db.executescript(
+            """
+            CREATE TABLE diaries_v12 (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                date             TEXT NOT NULL,
+                scope            TEXT NOT NULL DEFAULT 'bot:self',
+                text             TEXT NOT NULL,
+                mood             TEXT NOT NULL DEFAULT '',
+                highlights       TEXT NOT NULL DEFAULT '',
+                source_msg_count INTEGER NOT NULL DEFAULT 0,
+                created_at       REAL NOT NULL,
+                UNIQUE(date, scope)
+            );
+            INSERT INTO diaries_v12(date, scope, text, mood, highlights, source_msg_count, created_at)
+                SELECT date, scope, text, mood, highlights, source_msg_count, created_at FROM diaries;
+            DROP TABLE diaries;
+            ALTER TABLE diaries_v12 RENAME TO diaries;
+            """
+        )
+        await self.db.commit()
+        return True
 
     async def _migrate_relations(self) -> bool:
         """旧 relations 是 (a_qq, b_qq, relation_type) 自由文本，改成枚举 + 来源。"""
@@ -685,6 +729,38 @@ class Store:
         rows = await cur.fetchall()
         return [dict(r) for r in reversed(rows)]
 
+    # ---------- 日程 ----------
+    async def upsert_plan(
+        self, date: str, theme: str, mood: str, items_json: str
+    ) -> None:
+        await self.db.execute(
+            "INSERT INTO daily_plans(date, theme, mood, items_json, generated_at)"
+            " VALUES(?,?,?,?,?)"
+            " ON CONFLICT(date) DO UPDATE SET theme=excluded.theme,"
+            " mood=excluded.mood, items_json=excluded.items_json,"
+            " generated_at=excluded.generated_at",
+            (date, theme, mood, items_json, time.time()),
+        )
+        await self.db.commit()
+
+    async def get_plan(self, date: str) -> dict | None:
+        cur = await self.db.execute("SELECT * FROM daily_plans WHERE date=?", (date,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def recent_plans(self, limit: int = 3, before: str = "") -> list[dict]:
+        if before:
+            cur = await self.db.execute(
+                "SELECT * FROM daily_plans WHERE date < ? ORDER BY date DESC LIMIT ?",
+                (before, limit),
+            )
+        else:
+            cur = await self.db.execute(
+                "SELECT * FROM daily_plans ORDER BY date DESC LIMIT ?", (limit,)
+            )
+        rows = await cur.fetchall()
+        return [dict(r) for r in reversed(rows)]
+
     # ---------- diaries ----------
     async def get_diary(self, date: str, scope: str = "") -> dict | None:
         if scope:
@@ -706,7 +782,8 @@ class Store:
         highlights: str = "",
         source_msg_count: int = 0,
         scope: str = "bot:self",
-    ) -> None:
+    ) -> int:
+        """写入或更新日记，返回自增 id（向量索引要用）。"""
         await self.db.execute(
             "INSERT INTO diaries(date, scope, text, mood, highlights, source_msg_count,"
             " created_at) VALUES(?,?,?,?,?,?,?)"
@@ -716,6 +793,11 @@ class Store:
             (date, scope, text, mood, highlights, source_msg_count, time.time()),
         )
         await self.db.commit()
+        cur = await self.db.execute(
+            "SELECT id FROM diaries WHERE date=? AND scope=?", (date, scope)
+        )
+        row = await cur.fetchone()
+        return int(row["id"]) if row else 0
 
     async def recent_diaries(
         self, limit: int = 3, scope: str = "", before: str | None = None

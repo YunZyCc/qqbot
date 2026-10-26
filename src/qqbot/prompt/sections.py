@@ -170,6 +170,12 @@ def _period_of_day(hour: int) -> str:
     return "深夜"
 
 
+def plan_section(ctx: PromptContext) -> str:
+    """她此刻在做什么。问「在干嘛」时这就是答案。"""
+    text = (ctx.plan or "").strip()
+    return f"【你现在】\n{text}" if text else ""
+
+
 def self_section(ctx: PromptContext) -> str:
     state = ctx.self_state or {}
     mood = state.get("mood") or ""
@@ -280,6 +286,7 @@ def build_default_composer() -> PromptComposer:
     composer.register("relations", relations_section)
     composer.register("evolution", evolution_section)
     composer.register("time", time_section)
+    composer.register("plan", plan_section)
     composer.register("self", self_section)
     composer.register("emotion", emotion_section)
     composer.register("facts", facts_section)

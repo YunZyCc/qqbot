@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import re
 import time
@@ -137,6 +138,19 @@ async def build_context(store: Store, scope: str = "") -> str:
     episodes = await store.recent_episodes(owner_scope, 1)
     if episodes:
         chunks.append("最近发生的事（改写，别照抄）：" + episodes[-1]["text"][:150])
+
+    # 今天打算做什么：让说说有具体内容，而不是空泛抒情
+    try:
+        from .plan import today_plan
+
+        plan = await today_plan(store, dt.date.today())
+        if plan and plan.get("items"):
+            planned = "、".join(
+                str(i.get("activity") or "") for i in plan["items"][:4]
+            )
+            chunks.append(f"今天打算做的事：{planned}")
+    except Exception:
+        log.warning("读取当天日程失败（说说素材）", exc_info=True)
 
     return "\n\n".join(chunks) or "（没有素材，写点日常的观察就行）"
 

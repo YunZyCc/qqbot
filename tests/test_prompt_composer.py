@@ -15,6 +15,7 @@ def test_section_order():
         "relations",
         "evolution",
         "time",
+        "plan",
         "self",
         "emotion",
         "facts",

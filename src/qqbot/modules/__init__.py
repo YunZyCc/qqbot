@@ -8,6 +8,7 @@ from .media import MediaModule
 from .proactive import ProactiveModule
 from .profile import ProfileModule
 from .qzone import QzoneModule
+from .schedule import ScheduleModule
 from .self_memory import SelfMemoryModule
 
 # 新功能模块加到这里；是否启用由 ENABLED_MODULES 决定
@@ -22,4 +23,5 @@ MODULES = [
     QzoneModule(),
     ProfileModule(),
     SelfMemoryModule(),
+    ScheduleModule(),
 ]

@@ -81,6 +81,7 @@ class DiaryModule:
                     who,
                     allow_solo,
                     activity=await _activity(self.ctx, day),
+                    vector=self.ctx.vector,
                 )
             except Exception:
                 log.exception("每日日记生成失败（%s）", scope)

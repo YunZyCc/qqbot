@@ -93,8 +93,38 @@ class HybridRetriever:
         # 问的话跟历史无关（「在吗」「吃饭了」），给最近几条兜底
         return episodes[-k:]
 
+    async def recall_diaries(self, scope: str, query: str, k: int = 2) -> list[dict]:
+        """按语义召回以前写过的日记。只在本 scope 里找，不会串到别人。"""
+        if not self._vector_ready:
+            return []
+        try:
+            hits = await self.vector.search(scope, "diary", query, max(k * 3, k))
+        except Exception:
+            log.warning("日记向量检索失败", exc_info=True)
+            return []
+        if not hits:
+            return []
+
+        results: list[dict] = []
+        for diary_id, score in hits:
+            cur = await self.store.db.execute(
+                "SELECT * FROM diaries WHERE id=?", (diary_id,)
+            )
+            row = await cur.fetchone()
+            if row is None:
+                continue
+            data = dict(row)
+            # 双保险：向量库里的 scope 就分开了，这里再核一次
+            if scope and data.get("scope") and data["scope"] != scope:
+                continue
+            results.append({**data, "score": score})
+            if len(results) >= k:
+                break
+        return results
+
     async def recall_all(self, scope: str, query: str, k: int = 5, ep_k: int = 3) -> dict:
         return {
             "facts": await self.recall(scope, query, k),
             "episodes": await self.recall_episodes(scope, query, ep_k),
+            "diaries": await self.recall_diaries(scope, query, 2),
         }

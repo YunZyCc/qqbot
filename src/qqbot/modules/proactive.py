@@ -130,6 +130,14 @@ class ProactiveModule:
         summary_row = await ctx.store.latest_summary(scope, "session")
         summary = summary_row["text"] if summary_row else ""
 
+        plan_text = ""
+        try:
+            from ..memory.plan import describe, today_plan
+
+            plan_text = describe(await today_plan(ctx.store))
+        except Exception:
+            log.warning("读取当天日程失败（主动消息）", exc_info=True)
+
         messages = ctx.prompt.compose(
             PromptContext(
                 persona=ctx.persona,
@@ -138,6 +146,7 @@ class ProactiveModule:
                 self_state=self_state,
                 emotion=emotion,
                 diary=diary_text,
+                plan=plan_text,
                 history=[],
             )
         )
