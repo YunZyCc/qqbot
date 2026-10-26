@@ -361,6 +361,12 @@ class FakeContacts:
     async def relations_of(self, qq):
         return []
 
+    async def list_relations(self, limit=30):
+        return []
+
+    async def get_contact(self, qq):
+        return None
+
 
 class FakeSelfMemory:
     async def get_state(self):

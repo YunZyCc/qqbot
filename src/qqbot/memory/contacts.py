@@ -67,6 +67,14 @@ class ContactStore:
         )
         await self.store.db.commit()
 
+    async def list_relations(self, limit: int = 30) -> list[dict]:
+        """全部人际关系。她认识的人就那么几个，一次给全，谁跟谁都清楚。"""
+        cur = await self.store.db.execute(
+            "SELECT * FROM relations ORDER BY strength DESC, updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
     async def relations_of(self, qq: int) -> list[dict]:
         cur = await self.store.db.execute(
             "SELECT * FROM relations WHERE a_qq=? OR b_qq=? ORDER BY strength DESC",

@@ -456,7 +456,7 @@ async def build_reply_messages(
         if float(row.get("updated_at") or 0) >= cutoff and row["id"] not in seen:
             facts.append(row)
 
-    relations = await ctx.contacts.relations_of(sender)
+    relations = await ctx.contacts.list_relations()
     if relations:
         names: dict[int, str] = {}
         for qq in {*[r["a_qq"] for r in relations], *[r["b_qq"] for r in relations]}:
