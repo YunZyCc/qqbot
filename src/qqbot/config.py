@@ -149,6 +149,10 @@ class Settings(BaseSettings):
     def group_trigger_name_list(self) -> list[str]:
         return [n.strip() for n in self.group_trigger_names.split(",") if n.strip()]
 
+    # 她说了「去查查」但没真查时，后台补查一次并主动补发一条
+    followup_search_enabled: bool = True
+    followup_search_delay: float = 3.0   # 查之前先等一会儿，像真的在查
+
     # 她的一天：每天定时生成一份日程，聊天时知道自己此刻在做什么
     schedule_enabled: bool = True
     schedule_hour: int = 7

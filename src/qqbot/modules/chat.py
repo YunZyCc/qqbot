@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 _WANTS_STICKER = re.compile(r"(发|来|给|整|上|要)\s*[个张条套]?\s*(表情|表情包|图)")
 _WANTS_AGAIN = re.compile(r"再(发|来)一?[个张条]")
 
+# 她答应要去查的说法。命中且本轮没真查，就后台补一次
+_PROMISED_SEARCH = re.compile(
+    r"(我去查|我查一下|查查|我去搜|搜一下|等我查|等我看看|去瞅瞅|翻翻看|我这就查|帮你查)"
+)
+
 
 class ChatModule:
     """私聊对话：表情可识别、多段回复、思考延迟。"""
@@ -271,6 +276,7 @@ class ChatModule:
         await self._maybe_auto_sticker(sender, user_text, reply_text, sctx, scope)
         self._maybe_auto_social(scope)
         self._maybe_refresh_diary(scope, sctx)
+        self._maybe_followup_search(reply_text, user_text, ev, sender, scope)
 
         # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -351,6 +357,93 @@ class ChatModule:
             )
         except Exception:
             log.exception("刷新当天日记失败（%s）", scope)
+
+    def _maybe_followup_search(
+        self, reply_text: str, user_text: str, ev: Event, sender: int, scope: str
+    ) -> None:
+        """她嘴上说「去查查」但这一轮没真查时，后台真查一次并补发一条。
+
+        prompt 里已经要求「说了就必须真查」，但模型有时还是会漏。这里做兜底：
+        宁可多补一句，也别让她答应完就没下文。
+        """
+        ctx = self.ctx
+        settings = ctx.settings
+        if not getattr(settings, "followup_search_enabled", True):
+            return
+        search = getattr(ctx, "search", None)
+        if search is None or not getattr(search, "available", False):
+            return
+        if "web_search" in getattr(ctx.runtime, "last_tools", []):
+            return  # 这一轮已经查过了
+        if not _PROMISED_SEARCH.search(reply_text or ""):
+            return
+        query = (user_text or "").strip()
+        if len(query) < 2:
+            return
+        asyncio.create_task(
+            self._followup_search(query, ev, sender, scope)
+        )
+
+    async def _followup_search(
+        self, query: str, ev: Event, sender: int, scope: str
+    ) -> None:
+        ctx = self.ctx
+        settings = ctx.settings
+        try:
+            await asyncio.sleep(settings.followup_search_delay)
+            results = await ctx.search.search(query, 5)
+        except Exception:
+            log.warning("补查失败：%s", query, exc_info=True)
+            return
+        if not results:
+            return
+
+        from ..tools.builtin import format_search_results
+
+        material = format_search_results(results, 5)
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "你之前说要去查一下，刚查到了。用你自己的口吻补一句结果，"
+                    "像刚看完回来跟人说话，别用「根据搜索结果」这种腔调。"
+                    "两三句话，说完就行。"
+                ),
+            },
+            {"role": "user", "content": f"要查的是：{query}\n\n查到的内容：\n{material}"},
+        ]
+        try:
+            text, _ = await ctx.llm.complete(prompt, max_tokens=300, temperature=0.8)
+        except Exception:
+            log.warning("补查后生成补充消息失败", exc_info=True)
+            return
+        text = (text or "").strip()
+        if not text:
+            return
+
+        parts = split_reply(
+            text,
+            settings.reply_segments_max,
+            settings.reply_segment_max_chars,
+            settings.reply_segment_weight_list,
+            target_segments=2,
+        )
+        for index, part in enumerate(parts):
+            if index:
+                await asyncio.sleep(segment_interval(settings))
+            try:
+                if ev.is_group and ev.group_id:
+                    await ctx.api.send_group_msg(ev.group_id, part)
+                else:
+                    await ctx.api.send_private_msg(sender, part)
+            except Exception:
+                log.exception("补查消息发送失败")
+                break
+
+        await ctx.store.add_message(
+            scope, settings.bot_qq, "assistant", text, source="followup"
+        )
+        log.info("补发搜索结果：%s", text[:40])
 
     def _maybe_auto_social(self, scope: str) -> None:
         """按概率让她自己发说说 / 换签名。

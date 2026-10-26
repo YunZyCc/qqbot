@@ -96,8 +96,8 @@ async def test_token_budget_persists_per_day(tmp_path):
 
 async def test_token_budget_zero_means_unlimited(tmp_path):
     """budget=0 表示不限，只记账不拦截。"""
-    from qqbot.memory.store import Store
     from qqbot.llm.client import ChatClient
+    from qqbot.memory.store import Store
 
     store = Store(tmp_path / "unlimited.db", default_scope="private:1")
     await store.init()
