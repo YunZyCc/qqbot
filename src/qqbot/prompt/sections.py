@@ -86,6 +86,8 @@ def identity_section(ctx: PromptContext) -> str:
     role = "你的主人" if info.get("is_owner") else "你的朋友"
     return (
         f"你现在是在和「{name}」（QQ {qq}）私聊。他是{role}。\n\n"
+        "称呼要跟着这个人走——对别人用的称呼、别人让你叫的称呼，都不算数，"
+        "这个人怎么称呼你就在这一轮重新认。\n\n"
         "你只记得和他之间发生的事。别人跟你说过什么、你和别人聊过什么，"
         "一个字都不能说给他听，也不能暗示。"
     )

@@ -224,6 +224,7 @@ class ChatModule:
             sender,
             user_text,
             history,
+            sender_name=ev.sender_name or "",
             reply_slots=slots,
             reply_slot_chars=settings.reply_segment_max_chars,
         )
@@ -435,6 +436,7 @@ async def build_reply_messages(
     user_text: str,
     history: list[dict],
     *,
+    sender_name: str = "",
     reply_slots: int = 0,
     reply_slot_chars: int = 20,
 ) -> list[dict]:
@@ -459,7 +461,7 @@ async def build_reply_messages(
         await active_traits(ctx.store, scope) if settings.growth_enabled else []
     )
     chatroom = await _build_chatroom(ctx, scope, sender)
-    dm_identity = await _build_dm_identity(ctx, scope, sender)
+    dm_identity = await _build_dm_identity(ctx, scope, sender, sender_name)
     activity = ""
     if getattr(ctx, "store", None) is not None:
         from ..memory.social import activity_summary
@@ -549,7 +551,9 @@ def _looks_verbatim(reply_text: str, diary_texts: list[str]) -> bool:
     return False
 
 
-async def _build_dm_identity(ctx, scope: str, sender: int) -> dict | None:
+async def _build_dm_identity(
+    ctx, scope: str, sender: int, sender_name: str = ""
+) -> dict | None:
     """私聊时告诉模型当前对话对象；群聊返回 None（群有自己的段）。"""
     if scope.startswith("group:"):
         return None
@@ -558,6 +562,10 @@ async def _build_dm_identity(ctx, scope: str, sender: int) -> dict | None:
         contact = await ctx.contacts.get_contact(sender)
         if contact:
             name = str(contact.get("remark") or contact.get("nickname") or "")
+        if not name and sender_name:
+            # 首次见到这个人，把 QQ 昵称记下来，之后就能叫名字而不是号码
+            name = sender_name.strip()
+            await ctx.contacts.upsert_contact(sender, nickname=name)
     except Exception:
         log.warning("读取联系人失败（%s）", sender, exc_info=True)
 
