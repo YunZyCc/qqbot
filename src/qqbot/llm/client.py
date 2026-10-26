@@ -35,6 +35,9 @@ class ChatClient:
         return f"token_usage:{dt.date.today().isoformat()}"
 
     async def _over_budget(self) -> bool:
+        """budget <= 0 表示不限，只记账不拦截。"""
+        if self.budget <= 0:
+            return False
         if self.store is None:
             return self.used_tokens >= self.budget
         used = await self.store.counter(self._today_key())

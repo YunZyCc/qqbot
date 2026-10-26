@@ -92,3 +92,23 @@ async def test_token_budget_persists_per_day(tmp_path):
     finally:
         client.budget = original
         await store.close()
+
+
+async def test_token_budget_zero_means_unlimited(tmp_path):
+    """budget=0 表示不限，只记账不拦截。"""
+    from qqbot.memory.store import Store
+    from qqbot.llm.client import ChatClient
+
+    store = Store(tmp_path / "unlimited.db", default_scope="private:1")
+    await store.init()
+    client = ChatClient(store)
+    original = client.budget
+    try:
+        client.budget = 0
+        await client._add_usage(10_000_000)
+        assert await client._over_budget() is False
+        # 记账还在，只是不拦截
+        assert await store.counter(client._today_key()) == 10_000_000
+    finally:
+        client.budget = original
+        await store.close()

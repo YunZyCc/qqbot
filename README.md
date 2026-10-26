@@ -133,7 +133,7 @@ FRIEND_WHITELIST=123456789,987654321
 |---|---|---|
 | `OWNER_QQ` | 主人 QQ，为 0 拒绝启动 | `0` |
 | `FRIEND_WHITELIST` | 好友白名单，逗号分隔 | 空 |
-| `DAILY_TOKEN_BUDGET` | 每日 token 上限（按自然日，重启不重置） | `500000` |
+| `DAILY_TOKEN_BUDGET` | 每日 token 上限；`0` = 不限（只记账不拦截） | `0` |
 | `ENABLED_MODULES` | 启用模块 | `chat,diary,proactive,maintenance,qzone,profile` |
 | `SCHEDULE_ENABLED` / `SCHEDULE_HOUR` | 每天几点生成日程 | `true` / `7` |
 | `QZONE_ENABLED` / `QZONE_VISIBILITY` | 说说开关 / 可见性（1 所有人 4 好友 64 仅自己） | `false` / `1` |

@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     growth_enabled: bool = True
     growth_every: int = 10
     growth_promote_after: int = 3
-    daily_token_budget: int = 500_000
+    # 0 = 不限，只记账不拦截
+    daily_token_budget: int = 0
     request_timeout: float = 60.0
 
     # 日记
