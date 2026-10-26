@@ -268,6 +268,7 @@ class ChatModule:
         log.info("已回复 %s 段，共 %s 字", len(parts), len(reply_text))
 
         await self._maybe_auto_sticker(sender, user_text, reply_text, sctx, scope)
+        self._maybe_auto_social(scope)
 
         # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -314,6 +315,30 @@ class ChatModule:
                     vector=ctx.vector,
                 )
             )
+
+    def _maybe_auto_social(self, scope: str) -> None:
+        """按概率让她自己发说说 / 换签名。
+
+        不是每轮都掷，只在私聊里掷；发出去的是一次独立生成，和当前这句回复无关。
+        """
+        settings = self.ctx.settings
+        if not scope.startswith("private:"):
+            return
+        if settings.qzone_enabled and random.random() < settings.qzone_auto_rate:
+            asyncio.create_task(self._run_social("qzone", scope))
+        if settings.signature_enabled and random.random() < settings.signature_auto_rate:
+            asyncio.create_task(self._run_social("signature", scope))
+
+    async def _run_social(self, kind: str, scope: str) -> None:
+        from ..memory.social import auto_post, auto_signature
+
+        try:
+            if kind == "qzone":
+                await auto_post(self.ctx, scope)
+            else:
+                await auto_signature(self.ctx, scope)
+        except Exception:
+            log.exception("自动%s失败", "说说" if kind == "qzone" else "签名")
 
     async def _maybe_auto_sticker(
         self,

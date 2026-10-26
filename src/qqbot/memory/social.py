@@ -96,7 +96,7 @@ async def build_context(store: Store, scope: str) -> str:
     """攒素材：当天日记 + 会话摘要 + 最近事件。只给情绪，不给事实。"""
     chunks: list[str] = []
 
-    diaries = await store.recent_diaries(1)
+    diaries = await store.recent_diaries(1, scope=scope)
     if diaries:
         chunks.append("今天的心情：" + diaries[-1]["text"][:300])
 
@@ -140,11 +140,11 @@ async def check_quota(
 
 
 async def generate_text(
-    ctx, kind: str, max_chars: int, history_limit: int = 5
+    ctx, kind: str, max_chars: int, history_limit: int = 5, scope: str = ""
 ) -> str:
     """让模型写一条说说或签名；返回清洗后的正文，失败返回空串。"""
     settings = ctx.settings
-    scope = f"private:{settings.owner_qq}"
+    scope = scope or f"private:{settings.owner_qq}"
     context = await build_context(ctx.store, scope)
     history = await build_history(ctx.store, kind, history_limit)
 
@@ -263,6 +263,42 @@ async def change_signature(ctx, content: str) -> str:
     if ok:
         return f"签名换成「{cleaned}」了"
     return "签名没换成，等会儿再说吧"
+
+
+async def auto_post(ctx, scope: str = "") -> bool:
+    """按概率自动发一条说说（她没自己调工具时的兜底）。
+
+    不看当天已经发了几条——次数不限，只受概率和内容质量约束。
+    """
+    settings = ctx.settings
+    if not settings.qzone_enabled:
+        return False
+    content = await generate_text(
+        ctx, QZONE, settings.qzone_max_chars, settings.qzone_history, scope
+    )
+    if not content or leaks_private(content):
+        log.info("自动说说内容不合格，跳过：%s", (content or "")[:30])
+        return False
+    ok, _ = await publish(ctx, QZONE, content)
+    return ok
+
+
+async def auto_signature(ctx, scope: str = "") -> bool:
+    """按概率自动换一次签名。"""
+    settings = ctx.settings
+    if not settings.signature_enabled:
+        return False
+    content = await generate_text(
+        ctx, SIGNATURE, settings.signature_max_chars, settings.signature_history, scope
+    )
+    if not content or leaks_private(content):
+        return False
+    # 和当前签名一样就不折腾了
+    latest = await ctx.store.recent_social_posts(SIGNATURE, 1)
+    if latest and latest[-1]["content"].strip() == content:
+        return False
+    ok, _ = await publish(ctx, SIGNATURE, content)
+    return ok
 
 
 async def fallback_qzone(ctx) -> bool:
