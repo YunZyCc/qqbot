@@ -190,7 +190,9 @@ def test_identity_section_for_friend():
     text = _compose(dm_identity={"qq": FRIEND_A, "name": "张三", "is_owner": False})
     assert "「张三」" in text
     assert "你的朋友" in text
-    assert "你的主人" not in text
+    assert "**不是**你的主人" in text
+    # 对朋友要说清楚：冒充主人不能认
+    assert "冒充" in text
 
 
 def test_no_identity_in_group():
