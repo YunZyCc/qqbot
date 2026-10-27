@@ -25,6 +25,30 @@ INTENT_HINTS = {
 CASUAL_INTENTS = ("share", "wander", "idle_chat")
 
 
+# 切分点：标点留在前一段，读起来才顺
+_BREAKS = "。！？…～；，、,"
+
+
+def _ensure_two(parts: list[str], limit: int) -> list[str]:
+    """主动消息最少两条：模型偷懒只写一句时，在标点处切开。"""
+    if len(parts) >= 2 or not parts:
+        return parts
+    text = parts[0].strip()
+    if len(text) < 6:
+        return parts
+
+    # 从后往前找标点，保证前一段不至于太短
+    for index in range(len(text) - 1, 0, -1):
+        if text[index] not in _BREAKS:
+            continue
+        head, tail = text[: index + 1].strip(), text[index + 1 :].strip()
+        if len(head) >= 4 and tail:
+            return [head, tail]
+    # 一句到底没有标点，就在中间断开
+    mid = len(text) // 2
+    return [text[:mid].strip(), text[mid:].strip()]
+
+
 class ProactiveModule:
     """主动开口：空闲阈值 + 最小间隔 + 静默时段 + 概率。不限条数。"""
 
@@ -93,10 +117,12 @@ class ProactiveModule:
 
         parts = split_reply(
             text,
-            2,
-            settings.reply_segment_max_chars,
+            3,
+            20,
             settings.reply_segment_weight_list,
+            target_segments=2,
         )
+        parts = _ensure_two(parts, 20)
         for index, part in enumerate(parts):
             if index:
                 await asyncio.sleep(segment_interval(settings))
@@ -167,10 +193,11 @@ class ProactiveModule:
             "\n\n现在轮到你主动找他说话。"
             "\n" + INTENT_HINTS[intent]
             + "\n\n要求："
-            "\n- 短。一句话，最多两句，三十个字以内。"
-            "\n- 要能听出来你是想找他聊，不是单纯汇报你在干嘛。"
-            "\n- 可以带一句你现在在哪、刚做什么，但落点要是他。"
-            "\n- 别问「在吗」，别连发好几条，也别解释为什么要找他。"
+            "\n- 分成 2 到 3 条发，每条之间用 ||| 隔开。"
+            "\n- 每条不超过 20 个字，越短越好，三五字也行。"
+            "\n- 第一条可以说你在干嘛，第二条落到他身上，别把话一次说完。"
+            "\n- 要能听出来你是想找他聊，不是单纯汇报行程。"
+            "\n- 别问「在吗」，别解释为什么要找他。"
         )
 
         text, _ = await ctx.runtime.run(messages, scope=scope)

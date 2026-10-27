@@ -130,3 +130,26 @@ async def test_probability_zero_skip():
     module.ctx = ctx
     await module.tick()
     assert api.calls == []
+
+
+def test_ensure_two_splits_on_punctuation():
+    from qqbot.modules.proactive import _ensure_two
+
+    assert _ensure_two(["我在吃粉。想你了"], 20) == ["我在吃粉。", "想你了"]
+    assert _ensure_two(["在吃牛肉粉呢，加了个卤蛋，忽然想起你"], 20) == [
+        "在吃牛肉粉呢，加了个卤蛋，",
+        "忽然想起你",
+    ]
+
+
+def test_ensure_two_keeps_existing_parts():
+    from qqbot.modules.proactive import _ensure_two
+
+    assert _ensure_two(["在吃粉", "想你了"], 20) == ["在吃粉", "想你了"]
+
+
+def test_ensure_two_handles_tiny_text():
+    from qqbot.modules.proactive import _ensure_two
+
+    assert _ensure_two(["在"], 20) == ["在"]
+    assert _ensure_two([], 20) == []
