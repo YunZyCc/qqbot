@@ -50,7 +50,7 @@ NapCat（OneBot 11 协议端）
                              │
               异步写 SQLite（摘要 / 事实 / 日记 / 向量 / 关系）
                              │
-              Ollama（bge-m3 向量 + minicpm-v 看图，启动时自动拉起）
+              Ollama（只跑 bge-m3 向量，启动时自动拉起）
 ```
 
 ## 快速开始
@@ -63,8 +63,7 @@ NapCat（OneBot 11 协议端）
 - DeepSeek（或任意 OpenAI 兼容）API Key
 - [Ollama](https://ollama.com/)，拉两个模型：
   ```powershell
-  ollama pull bge-m3        # 向量检索
-  ollama pull minicpm-v:8b  # 看图
+  ollama pull bge-m3        # 向量检索（看图用 DeepSeek，不需要本地视觉模型了）
   ```
 - **一个不常用的小号**（重要，见文末免责）
 
@@ -142,6 +141,7 @@ FRIEND_WHITELIST=123456789,987654321
 | `PROACTIVE_ENABLED` / `PROACTIVE_DAILY_MAX` | 主动开口 / 每天上限 | `true` / `5` |
 | `STICKER_AUTO_RATE` / `STICKER_VECTOR_WEIGHT` | 自动补图概率 / 向量权重 | `0.4` / `0.5` |
 | `GROUP_WHITELIST` / `GROUP_TRIGGER_NAMES` | 群白名单 / 触发名 | 空 / 空 |
+| `VISION_PROVIDER` | 看图后端：`deepseek`（快准）或 `ollama`（本地） | `deepseek` |
 | `OLLAMA_AUTOSTART` / `OLLAMA_EXE` | 启动时自动拉起 Ollama | `true` / 空 |
 | `TOOLS_ENABLED` | 是否把工具暴露给模型 | `false` |
 | `REPLY_SEGMENTS_MAX` / `REPLY_SEGMENT_WEIGHTS` | 最多几条 / 条数权重 | `5` / `30,22,18,18,12` |

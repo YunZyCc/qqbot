@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
+    # 图片理解用的模型：DeepSeek 主模型本身就能看图
+    deepseek_vision_model: str = "deepseek-flash"
 
     # NapCat 的 HTTP API 地址（发动作）
     onebot_http_url: str = "http://127.0.0.1:3000"
@@ -231,6 +233,8 @@ class Settings(BaseSettings):
 
     # 视觉理解
     vision_enabled: bool = True
+    # deepseek = 用主模型的图像理解（快、准、不占内存）；ollama = 本地小模型
+    vision_provider: str = "deepseek"
     vision_base_url: str = "http://127.0.0.1:11434/v1"
     vision_api_key: str = "ollama"
     vision_model: str = "minicpm-v:8b"

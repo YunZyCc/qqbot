@@ -173,13 +173,25 @@ async def build_context(settings: Settings | None = None) -> AppContext:
     ctx.retriever = HybridRetriever(store, ctx.vector)
 
     if settings.vision_enabled:
-        ctx.vision = OpenAICompatibleVision(
-            settings.vision_base_url,
-            settings.vision_api_key,
-            settings.vision_model,
-            settings.vision_timeout,
-        )
-        log.info("视觉模型已配置：%s", settings.vision_model)
+        if settings.vision_provider == "deepseek":
+            # DeepSeek 原生支持图片输入，接口和 OpenAI 完全一致，只是换了 base/key/model
+            ctx.vision = OpenAICompatibleVision(
+                settings.deepseek_base_url,
+                settings.deepseek_api_key,
+                settings.deepseek_vision_model,
+                settings.vision_timeout,
+                flatten_dynamic=False,
+                disable_thinking=True,
+            )
+            log.info("视觉模型：DeepSeek %s", settings.deepseek_vision_model)
+        else:
+            ctx.vision = OpenAICompatibleVision(
+                settings.vision_base_url,
+                settings.vision_api_key,
+                settings.vision_model,
+                settings.vision_timeout,
+            )
+            log.info("视觉模型：本地 %s", settings.vision_model)
     else:
         ctx.vision = NullVision()
     ctx.images = ImageCache(

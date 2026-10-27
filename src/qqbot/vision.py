@@ -62,14 +62,21 @@ class OpenAICompatibleVision:
         api_key: str,
         model: str,
         timeout: float = 120.0,
+        flatten_dynamic: bool = True,
+        disable_thinking: bool = False,
     ) -> None:
         self.base = base_url.rstrip("/")
         self.key = api_key
         self.model = model
+        # Ollama 对动图支持差，要先取第一帧；DeepSeek 原生支持 GIF/WebP，不必压平
+        self.flatten_dynamic = flatten_dynamic
+        # DeepSeek Flash 默认会先思考，看图这种任务用不着，关掉能省一大截 token
+        self.disable_thinking = disable_thinking
         self._client = httpx.AsyncClient(timeout=timeout, trust_env=False)
 
     async def describe(self, image: bytes, mime: str, question: str = "") -> str:
-        image, mime = _flatten_image(image, mime)
+        if self.flatten_dynamic:
+            image, mime = _flatten_image(image, mime)
         encoded = base64.b64encode(image).decode()
         prompt = (question or "").strip() or DEFAULT_QUESTION
         payload = {
@@ -89,6 +96,8 @@ class OpenAICompatibleVision:
             "max_tokens": 300,
             "temperature": 0.3,
         }
+        if self.disable_thinking:
+            payload["thinking"] = {"type": "disabled"}
         headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
         resp = await self._client.post(
             f"{self.base}/chat/completions", json=payload, headers=headers
