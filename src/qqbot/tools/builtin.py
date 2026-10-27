@@ -186,6 +186,8 @@ def register_builtin_tools(registry: ToolRegistry, ctx) -> None:
         )
     )
 
+    _register_plan_tool(registry, ctx)
+
     _register_qzone_tool(registry, ctx)
 
     _register_search_tools(registry, ctx)
@@ -195,8 +197,39 @@ class PostQzoneParams(BaseModel):
     content: str
 
 
+class PlanParams(BaseModel):
+    date: str = ""
+
+
 class UpdateSignatureParams(BaseModel):
     content: str
+
+
+def _register_plan_tool(registry: ToolRegistry, ctx) -> None:
+    """日程查询：对方问明天/后天安排时，她现生成一份。"""
+    if not getattr(ctx.settings, "schedule_enabled", True):
+        return
+
+    async def plan_lookup(date: str) -> str:
+        from ..memory.plan import plan_text_for, resolve_day
+
+        day = resolve_day(date)
+        if day is None:
+            return "这个日期我没看懂，说个具体的日子或者「明天」"
+        return await plan_text_for(ctx, day)
+
+    registry.register(
+        Tool(
+            name="plan_lookup",
+            description=(
+                "查你某天的日程安排。对方问「明天干嘛」「周末打算」这类问题时用。"
+                "date 传 today / tomorrow / 具体日期（2026-10-28），留空就是今天。"
+                "那天没有安排会现生成一份。"
+            ),
+            params=PlanParams,
+            handler=plan_lookup,
+        )
+    )
 
 
 def _register_qzone_tool(registry: ToolRegistry, ctx) -> None:

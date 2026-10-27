@@ -21,6 +21,9 @@ PLAN_PROMPT = """你在给「周周」安排今天的一天。
 她的一天是实地过的：出门买咖啡、在公园长椅上坐一下午、逛超市、去菜市场、
 在家躺到中午、接活干两小时、临时起意坐车去江边、下雨了懒得动……
 
+**她不受地域限制**：家附近能去，隔壁城市也能去；可以临时买张票出远门，
+在外地住一晚，去海边、去山里、去朋友那儿待两天。没人管她，她也不缺这个胆。
+
 今天是 {date}。
 
 {history}
@@ -32,6 +35,7 @@ PLAN_PROMPT = """你在给「周周」安排今天的一天。
 - 每个时段写清楚：几点到几点、在做什么、在哪儿
 - 活动要具体但要短（15 字以内），别写「思考人生」这种空话；写成「去街角买杯冰美式」
 - **要有真实的身体和生活**：吃饭、走路、坐车、晒太阳、逛店、跟人说话都算
+- **地点可以离家很远**：别的区、别的城市、高铁上、海边、山里的民宿都行
 - 不要一天到晚守着手机——聊天是她的事，但不是她全部的事
 - **不要编造和某个具体的人的约定**（她不能主动约人）
 - 和过去几天的活动错开，别连续几天都做同一件事
@@ -205,6 +209,51 @@ async def generate_plan(ctx, day: dt.date | None = None) -> dict | None:
         len(plan["items"]),
     )
     return plan
+
+
+async def ensure_plan(ctx, day: dt.date | None = None) -> dict | None:
+    """某天有日程就返回，没有就现生成一份。"""
+    day = day or dt.date.today()
+    plan = await today_plan(ctx.store, day)
+    if plan is not None:
+        return plan
+    return await generate_plan(ctx, day)
+
+
+def resolve_day(text: str) -> dt.date | None:
+    """把 today / tomorrow / 明天 / 2026-10-28 解析成日期。"""
+    raw = (text or "").strip()
+    today = dt.date.today()
+    if not raw:
+        return today
+    lowered = raw.lower()
+    if lowered in {"today", "今天", "今日", "now"}:
+        return today
+    if lowered in {"tomorrow", "明天", "明日"}:
+        return today + dt.timedelta(days=1)
+    if lowered in {"yesterday", "昨天"}:
+        return today - dt.timedelta(days=1)
+    for fmt in ("%Y-%m-%d", "%m-%d", "%Y/%m/%d", "%m/%d"):
+        try:
+            parsed = dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+        if fmt in ("%m-%d", "%m/%d"):
+            parsed = parsed.replace(year=today.year)
+        return parsed
+    return None
+
+
+async def plan_text_for(ctx, day: dt.date) -> str:
+    """给工具用的文本版日程。"""
+    plan = await ensure_plan(ctx, day)
+    if not plan:
+        return "这天没安排上，脑子里是空的"
+    lines = [f"{day.isoformat()}（{plan.get('mood') or '平常'}）：{plan.get('theme') or ''}"]
+    for item in plan.get("items") or []:
+        place = f"，{item['place']}" if item.get("place") else ""
+        lines.append(f"- {item['start']}-{item['end']} {item['activity']}{place}")
+    return "\n".join(lines)
 
 
 async def today_plan(store: Store, day: dt.date | None = None) -> dict | None:

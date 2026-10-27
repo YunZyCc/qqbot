@@ -23,7 +23,6 @@ def _settings(tmp_path, **extra) -> Settings:
         deepseek_api_key="sk-test",
         data_dir=tmp_path,
         schedule_enabled=True,
-        schedule_hour=7,
         schedule_history_days=3,
     )
     base.update(extra)
@@ -263,7 +262,6 @@ def test_plan_section_empty():
 def test_settings_defaults(tmp_path):
     settings = _settings(tmp_path)
     assert settings.schedule_enabled is True
-    assert settings.schedule_hour == 7
     assert settings.schedule_history_days == 3
 
 

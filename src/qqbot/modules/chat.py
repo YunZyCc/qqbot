@@ -277,6 +277,7 @@ class ChatModule:
         self._maybe_auto_social(scope)
         self._maybe_refresh_diary(scope, sctx)
         self._maybe_followup_search(reply_text, user_text, ev, sender, scope)
+        self._maybe_start_day(scope)
 
         # 信号词命中立即抽；否则每 N 轮兜底。只抽上次之后的新消息，避免重复抽取浪费 token
         if has_signal(user_text) or sctx.turns % settings.facts_every == 0:
@@ -357,6 +358,41 @@ class ChatModule:
             )
         except Exception:
             log.exception("刷新当天日记失败（%s）", scope)
+
+    def _maybe_start_day(self, scope: str) -> None:
+        """每天第一次聊天时生成当天的日程。
+
+        放在回复之后异步做，不拖慢第一条回复；这条回复里没有日程，
+        下一条就有了。
+        """
+        ctx = self.ctx
+        if not getattr(ctx.settings, "schedule_enabled", True):
+            return
+        if not scope.startswith("private:"):
+            return
+        if getattr(ctx, "_plan_started_for", "") == dt.date.today().isoformat():
+            return
+        asyncio.create_task(self._start_day())
+
+    async def _start_day(self) -> None:
+        from ..memory.plan import ensure_plan
+
+        ctx = self.ctx
+        today = dt.date.today().isoformat()
+        if getattr(ctx, "_plan_started_for", "") == today:
+            return
+        ctx._plan_started_for = today
+        try:
+            plan = await ensure_plan(ctx, dt.date.today())
+            if plan:
+                log.info(
+                    "今天的日程：%s（%s 个时段）",
+                    plan.get("theme", "")[:20],
+                    len(plan.get("items") or []),
+                )
+        except Exception:
+            log.exception("生成当天日程失败")
+            ctx._plan_started_for = ""
 
     def _maybe_followup_search(
         self, reply_text: str, user_text: str, ev: Event, sender: int, scope: str

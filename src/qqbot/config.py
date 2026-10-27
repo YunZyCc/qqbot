@@ -157,7 +157,6 @@ class Settings(BaseSettings):
 
     # 她的一天：每天定时生成一份日程，聊天时知道自己此刻在做什么
     schedule_enabled: bool = True
-    schedule_hour: int = 7
     schedule_history_days: int = 3
 
     # QQ 空间说说：她自己决定发，一天 1~3 条

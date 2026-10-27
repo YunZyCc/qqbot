@@ -9,7 +9,7 @@
 
 | | |
 |---|---|
-| 🗓️ **有自己的日程** | 每天生成一份真实生活时间线（买咖啡、逛菜市场、江边吹风、接活改稿）。问她「在干嘛」，她真的在别处 |
+| 🗓️ **有自己的日程** | 每天第一次聊天时生成真实生活时间线（买咖啡、逛菜市场、坐高铁去隔壁城市）。问她「在干嘛」她真在别处，问「明天」她现生成 |
 | 📝 **发说说 / 换签名** | 想发就发，一天不限。内容从日程和聊天里长出来，不会把你的私聊搬上空间 |
 | 🧠 **六层记忆** | 消息 / 事件 / 事实 / 联系人 / 摘要 / 日记，全套按 QQ 号隔离 |
 | 📖 **日记会回忆** | 每天写一篇，带向量索引。问「你上次提到面试是哪天」能搜到 |
@@ -134,7 +134,7 @@ FRIEND_WHITELIST=123456789,987654321
 | `FRIEND_WHITELIST` | 好友白名单，逗号分隔 | 空 |
 | `DAILY_TOKEN_BUDGET` | 每日 token 上限；`0` = 不限（只记账不拦截） | `0` |
 | `ENABLED_MODULES` | 启用模块 | `chat,diary,proactive,maintenance,qzone,profile` |
-| `SCHEDULE_ENABLED` / `SCHEDULE_HOUR` | 每天几点生成日程 | `true` / `7` |
+| `SCHEDULE_ENABLED` | 日程开关（首次聊天时生成） | `true` |
 | `QZONE_ENABLED` / `QZONE_VISIBILITY` | 说说开关 / 可见性（1 所有人 4 好友 64 仅自己） | `false` / `1` |
 | `QZONE_AUTO_RATE` / `SIGNATURE_AUTO_RATE` | 每轮自动发说说 / 换签名的概率 | `0.03` / `0.02` |
 | `SIGNATURE_ENABLED` / `SIGNATURE_HOUR` | 每日签名轮换 | `false` / `9` |
