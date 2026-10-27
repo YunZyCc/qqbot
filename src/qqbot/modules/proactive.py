@@ -11,16 +11,22 @@ from ..prompt.composer import PromptContext
 
 log = logging.getLogger(__name__)
 
+# 四种固定场合 + 三种「没事也想说话」的由头，后者随机挑一个
 INTENT_HINTS = {
     "morning": "现在是早上。主动跟对方说句早安，可以带一句你今天的打算。",
     "night": "现在是晚上。主动跟对方说句晚安，语气自然点。",
     "miss": "对方已经好几个小时没说话了。主动说一句惦记的话，不要催。",
-    "share": "主动分享一件你记得的事，或者你此刻在干什么、在哪。",
+    "share": "主动分享一件你记得的事。",
+    "wander": "说一句你此刻看到或碰到的小事——街上的、路过的、手里的，随手一说。",
+    "idle_chat": "没什么正事，就是忽然想跟他说句话。",
 }
+
+# 平时随机挑的几种，避免每次都走同一个套路
+CASUAL_INTENTS = ("share", "wander", "idle_chat")
 
 
 class ProactiveModule:
-    """主动开口：随机空闲阈值 + 每日额度 + 静默时段 + 概率。"""
+    """主动开口：空闲阈值 + 最小间隔 + 静默时段 + 概率。不限条数。"""
 
     name = "proactive"
 
@@ -36,13 +42,17 @@ class ProactiveModule:
             name="主动开口检查",
             job_id="proactive-tick",
         )
-        log.info("proactive 模块已启用（每 %s 分钟检查一次）", settings.proactive_check_minutes)
+        log.info(
+            "proactive 模块已启用（每 %s 分钟检查，空闲 %s~%s 分钟可能开口）",
+            settings.proactive_check_minutes,
+            settings.proactive_idle_min,
+            settings.proactive_idle_max,
+        )
 
     async def tick(self) -> None:
         ctx = self.ctx
         settings = ctx.settings
         now = time.time()
-        today = dt.date.today().isoformat()
         scope = f"private:{settings.owner_qq}"
 
         # 服务刚启动时内存里的计时是 0，从库里把最后一条用户消息捞回来
@@ -52,10 +62,6 @@ class ProactiveModule:
 
         hour = dt.datetime.now().hour
         if settings.proactive_quiet_start <= hour < settings.proactive_quiet_end:
-            return
-
-        count = int(await ctx.store.get_setting(f"proactive_count:{today}", "0") or 0)
-        if count >= settings.proactive_daily_max:
             return
 
         last = float(await ctx.store.get_setting("last_proactive_at", "0") or 0)
@@ -69,7 +75,8 @@ class ProactiveModule:
         if idle < threshold:
             return
 
-        if ctx.last_user_at and now - ctx.last_user_at < 600:
+        cooldown = int(getattr(settings, "proactive_cooldown_seconds", 300))
+        if ctx.last_user_at and now - ctx.last_user_at < cooldown:
             return
 
         if ctx.emotion is not None:
@@ -99,14 +106,23 @@ class ProactiveModule:
                 log.exception("主动消息发送失败")
                 break
 
+        today = dt.date.today().isoformat()
         await ctx.store.add_message(
             scope, settings.bot_qq, "assistant", text, source="proactive"
         )
         await ctx.store.set_setting("last_proactive_at", str(now))
-        await ctx.store.set_setting(f"proactive_count:{today}", str(count + 1))
+        await ctx.store.set_setting(
+            f"proactive_count:{today}", str(await self._today_count() + 1)
+        )
         if ctx.emotion is not None:
             await ctx.emotion.on_proactive_sent(text)
         log.info("已主动开口（%s）：%s", intent, text[:40])
+
+    async def _today_count(self) -> int:
+        today = dt.date.today().isoformat()
+        return int(
+            await self.ctx.store.get_setting(f"proactive_count:{today}", "0") or 0
+        )
 
     def _pick_intent(self, hour: int, idle: float, settings) -> str:
         if 6 <= hour < 9:
@@ -115,7 +131,7 @@ class ProactiveModule:
             return "night"
         if idle >= settings.proactive_miss_hours * 3600:
             return "miss"
-        return "share"
+        return random.choice(CASUAL_INTENTS)
 
     async def _generate(self, intent: str) -> str:
         ctx = self.ctx
@@ -124,8 +140,6 @@ class ProactiveModule:
 
         self_state = await ctx.self_memory.get_state()
         emotion = await ctx.emotion.prompt_text() if ctx.emotion is not None else ""
-        diaries = await ctx.store.recent_diaries(1)
-        diary_text = diaries[-1]["text"][:300] if diaries else ""
         facts = await ctx.retriever.recall(scope, INTENT_HINTS[intent], 3)
         summary_row = await ctx.store.latest_summary(scope, "session")
         summary = summary_row["text"] if summary_row else ""
@@ -145,7 +159,6 @@ class ProactiveModule:
                 facts=facts,
                 self_state=self_state,
                 emotion=emotion,
-                diary=diary_text,
                 plan=plan_text,
                 history=[],
             )
@@ -153,7 +166,8 @@ class ProactiveModule:
         messages[0]["content"] += (
             "\n\n现在轮到你主动开口。对方有一阵没说话了。"
             "\n" + INTENT_HINTS[intent]
-            + "\n说 1~2 句自然的话，不要问「在吗」，不要连续追问。"
+            + "\n说 1~2 句自然的话。"
+            "\n如果合适，可以顺带说一句你现在在哪、刚在做什么——像真人那样。"
         )
 
         text, _ = await ctx.runtime.run(messages, scope=scope)
