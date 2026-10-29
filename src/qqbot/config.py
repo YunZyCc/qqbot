@@ -190,14 +190,14 @@ class Settings(BaseSettings):
     proactive_check_minutes: int = 10
     # 0 = 不限条数
     proactive_daily_max: int = 0
-    proactive_min_gap_minutes: int = 10
-    proactive_idle_min: int = 10
-    proactive_idle_max: int = 60
+    proactive_min_gap_minutes: int = 40
+    proactive_idle_min: int = 40
+    proactive_idle_max: int = 120
     # 你最近多少秒内说过话就不插嘴
-    proactive_cooldown_seconds: int = 300
+    proactive_cooldown_seconds: int = 600
     proactive_quiet_start: int = 0
     proactive_quiet_end: int = 7
-    proactive_probability: float = 0.6
+    proactive_probability: float = 0.4
     proactive_miss_hours: int = 6
 
     # 被晾情绪

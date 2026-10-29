@@ -170,14 +170,6 @@ class ProactiveModule:
         summary_row = await ctx.store.latest_summary(scope, "session")
         summary = summary_row["text"] if summary_row else ""
 
-        plan_text = ""
-        try:
-            from ..memory.plan import describe, today_plan
-
-            plan_text = describe(await today_plan(ctx.store))
-        except Exception:
-            log.warning("读取当天日程失败（主动消息）", exc_info=True)
-
         messages = ctx.prompt.compose(
             PromptContext(
                 persona=ctx.persona,
@@ -185,7 +177,6 @@ class ProactiveModule:
                 facts=facts,
                 self_state=self_state,
                 emotion=emotion,
-                plan=plan_text,
                 history=[],
             )
         )
@@ -195,8 +186,8 @@ class ProactiveModule:
             + "\n\n要求："
             "\n- 分成 2 到 3 条发，每条之间用 ||| 隔开。"
             "\n- 每条不超过 20 个字，越短越好，三五字也行。"
-            "\n- 第一条可以说你在干嘛，第二条落到他身上，别把话一次说完。"
-            "\n- 要能听出来你是想找他聊，不是单纯汇报行程。"
+            "\n- 第一条说一句你此刻的念头或情绪，第二条落到他身上，别把话一次说完。"
+            "\n- 要能听出来你是想找他聊。"
             "\n- 别问「在吗」，别解释为什么要找他。"
         )
 
