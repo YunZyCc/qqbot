@@ -127,10 +127,12 @@ def describe(plan: dict | None, now: dt.datetime | None = None) -> str:
         place = f"，在{item['place']}" if item.get("place") else ""
         lines.append(f"{hhmm}，你正在{item['activity']}{place}。")
     theme = plan.get("theme") or ""
+    mood = plan.get("mood") or ""
     if theme:
         # 活动描述可能很长，只截前一小段，免得把 prompt 撑爆
         overview = "、".join(str(i["activity"])[:10] for i in items[:4])
-        lines.append(f"今天大概是：{theme[:30]}。计划里有{overview}。")
+        mood_part = f"今天心情是{mood}，" if mood else ""
+        lines.append(f"今天大概是：{theme[:30]}。{mood_part}计划里有{overview}。")
     return "\n".join(lines)
 
 
