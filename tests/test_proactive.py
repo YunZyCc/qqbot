@@ -153,3 +153,12 @@ def test_ensure_two_handles_tiny_text():
 
     assert _ensure_two(["在"], 20) == ["在"]
     assert _ensure_two([], 20) == []
+
+
+def test_intent_hints_avoid_abrupt_words():
+    """提示词本身不能带「忽然」这类词，否则模型会跟着学。"""
+    from qqbot.modules.proactive import INTENT_HINTS
+
+    for intent, hint in INTENT_HINTS.items():
+        for word in ("突然", "忽然", "猛地"):
+            assert word not in hint, f"{intent} 的提示里还有「{word}」"
