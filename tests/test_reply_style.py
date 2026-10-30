@@ -69,7 +69,26 @@ def test_single_reply_without_delimiter():
 def test_fallback_splits_sentences():
     parts = split_reply("你开心就好。要不要再来一张看看？", 5, 40, FIVE_ONLY)
     assert len(parts) == 2
-    assert parts[0].endswith("。")
+    # 句号会被去掉，问号保留
+    assert not parts[0].endswith("。")
+    assert parts[1].endswith("？")
+
+
+def test_trailing_period_stripped():
+    from qqbot.core.reply_style import split_reply
+
+    assert split_reply("今天好累啊。", 5, 0, target_segments=1) == ["今天好累啊"]
+    assert split_reply("行吧。|||没睡好。", 5, 0, target_segments=2) == ["行吧", "没睡好"]
+    # 问号、感叹号、省略号是语气，不能动
+    assert split_reply("真的假的？！", 5, 0, target_segments=1) == ["真的假的？！"]
+    assert split_reply("等等……", 5, 0, target_segments=1) == ["等等……"]
+
+
+def test_trailing_period_kept_for_verbatim():
+    from qqbot.core.reply_style import split_reply
+
+    parts = split_reply("今天这页留着，不折叠。", 5, 0, verbatim=True)
+    assert parts and parts[0].endswith("。")
 
 
 def test_merge_adds_comma_between_pieces():

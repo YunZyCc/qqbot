@@ -145,7 +145,19 @@ def split_reply(
             merged_tail = _join_pieces(merged_tail, piece)
         expanded = head + ([merged_tail] if merged_tail else [])
 
-    return [piece for piece in expanded if piece.strip()]
+    result = [piece for piece in expanded if piece.strip()]
+    return [_drop_trailing_period(piece) for piece in result]
+
+
+_TRAILING_PERIODS = "。."
+
+
+def _drop_trailing_period(piece: str) -> str:
+    """去掉句末的句号。问号、感叹号、省略号都不动——那些是语气。"""
+    out = piece.rstrip()
+    while out and out[-1] in _TRAILING_PERIODS:
+        out = out[:-1].rstrip()
+    return out or piece
 
 
 def reply_delay(settings) -> float:
